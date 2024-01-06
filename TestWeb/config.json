@@ -1,0 +1,13 @@
+{
+	"appRoot": "TestWeb",
+	"apiRoot": "/api",
+	"apiControllers": "API/Controllers",
+	"controllers": "Controllers",
+	"views": "Views",
+	"defaultController": "Home",
+	"defaultAction": "Index",
+
+	"viewBag": {
+		"title": "Melodic-Test.local API"
+	}
+}

@@ -12,7 +12,6 @@ namespace TestWeb
 
 	InjectionEngine::RegisterFromLibrary(Config::Get("appRoot"), __DIR__, [".", "..", basename(__FILE__)]);
 
-
 	$tempHook = new class implements iRequestHook {
 		private ?iRequestHook $_next;
 
@@ -23,16 +22,18 @@ namespace TestWeb
 
 		public function Invoke(Request $request): Response
 		{
-			return $this->_next->Invoke($request);
+			try {
+				return $this->_next->Invoke($request);
+			} catch (\Exception $ex) {
+				// we could use this hook to capture exceptions and log
+				die($ex);
+			}
 		}
 	};
 
-
 	/** configure pipeline */
 	$pipeline = new RequestPipeline();
-
 	$pipeline->RegisterHook($tempHook::class);
-
 	$pipeline->Exec();
 }
 ?>

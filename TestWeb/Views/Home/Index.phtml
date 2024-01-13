@@ -1,33 +1,19 @@
+<?php
+$this->ViewBag("title", "Melodic PHP Test Web");
+?>
+
 <h1>Test Page</h1>
 
 <ul>
 	<?php
 		foreach ($model as $record) {
-			print "<li>{$record}</li>";
+			print "<li style=\"cursor: pointer;\" onclick=\"testFunc('{$record}')\">{$record}</li>";
 		}
 	?>
 </ul>
 
-<div id="SchoolList" style="margin: 50px; padding: 10px; background: #EAEAEA; border-radius: 4px;" ng-app="SchoolApp">
-	<div ng-controller="SchoolController">
-		<h1>Schools</h1>
-		<ul>
-			<li ng-repeat="school in schools" title="{{school.SchoolName}}" ng-cloak>ID: {{school.SchoolID}} | Name: {{school.SchoolName}}</li>
-		</ul>
-	</div>
-</div>
-
 #section scripts
 	<script type="text/javascript">
-	/** create the angular app */
-	var SchoolApp = angular.module('SchoolApp', [])
-		/** setup SchoolController */
-		.controller('SchoolController', ['$scope', '$http', function($scope, $http){
-			/** get the schools */
-			$scope.schools = [];
-			$http.get('//services.melodic.dev/api/school').then(function (response){
-				$scope.schools = response.data;
-			});
-		}]);
+		var testFunc = (value) => alert(`Value: ${value}`);
 	</script>
 #end

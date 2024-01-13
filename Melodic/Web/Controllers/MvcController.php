@@ -30,19 +30,20 @@ namespace Melodic\Web\Controllers
 
 		public function Exec(): Response
 		{
-			$action = $this->request->action;
-			if (method_exists($this, $action)){
-				$params = $this->request->params;
-				foreach ($this->request->query as $key => $value) {
-					$params[$key] = $value;
-				}
-				
-				$result = call_user_func_array(array($this, $action), $params);
+			$action = $this->GetActionName();
 
-				return $this->Html($result);
+			if (is_null($action)){
+				return Controller::PageNotFound();
 			}
 
-			return Controller::PageNotFound();
+			$params = $this->request->params;
+			foreach ($this->request->query as $key => $value) {
+				$params[$key] = $value;
+			}
+				
+			$result = call_user_func_array(array($this, $action), $params);
+
+			return $this->Html($result);
 		}
 
 		public function ViewBag($key, $value = null)

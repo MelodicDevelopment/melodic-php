@@ -36,7 +36,7 @@ namespace Melodic\Web
 				header("{$header}: {$value}");
 			}
 
-			die($this->_content);
+			die($this->_content ?? "");
 		}
 	}
 }

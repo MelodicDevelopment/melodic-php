@@ -165,6 +165,7 @@ return $this->view('home/index', ['message' => 'Hello']);
 
 ## Conventions
 
+- **Never add Co-Authored-By or any AI attribution to commits**
 - **PHP 8.2+**: enums, readonly properties, constructor promotion, match expressions
 - **PascalCase** classes, **camelCase** methods/properties
 - **Controller → Service → Query/Command** — no direct DB access in controllers

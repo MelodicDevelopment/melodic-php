@@ -1,6 +1,6 @@
 # Melodic PHP Framework
 
-A modern PHP 8.2+ framework with CQRS data patterns, JWT authentication, and a PSR-15-style middleware pipeline. Built to mirror the NHA.Backend layered architecture: **Controller → Service → Query/Command**.
+A modern PHP 8.2+ framework with CQRS data patterns, JWT authentication, and a PSR-15-style middleware pipeline. Uses a layered architecture: **Controller → Service → Query/Command**.
 
 ## Requirements
 
@@ -450,7 +450,7 @@ $app->register(new AppServiceProvider());
 
 ## CQRS Data Pattern
 
-The framework uses a **Command/Query Responsibility Segregation** pattern that mirrors NHA.Backend. Services instantiate query and command objects directly (no mediator).
+The framework uses a **Command/Query Responsibility Segregation** pattern. Services instantiate query and command objects directly (no mediator).
 
 ### Queries
 

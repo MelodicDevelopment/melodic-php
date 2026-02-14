@@ -1,6 +1,6 @@
 # Melodic PHP Framework
 
-Modern PHP 8.2+ framework with CQRS, JWT authentication, and middleware pipeline. Mirrors the NHA.Backend architecture (Controller → Service → Query/Command).
+Modern PHP 8.2+ framework with CQRS, JWT authentication, and middleware pipeline. Uses a layered architecture (Controller → Service → Query/Command).
 
 ## Architecture
 

@@ -13,7 +13,7 @@ enum HttpMethod: string
     case PATCH = 'PATCH';
     case OPTIONS = 'OPTIONS';
 
-    public static function from(string $method): self
+    public static function parse(string $method): self
     {
         return self::tryFrom(strtoupper($method))
             ?? throw new \ValueError("Invalid HTTP method: {$method}");

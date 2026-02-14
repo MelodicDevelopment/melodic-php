@@ -25,7 +25,7 @@ class Request
         ?array $cookies = null,
     ) {
         $server = $server ?? $_SERVER;
-        $this->method = HttpMethod::from($server['REQUEST_METHOD'] ?? 'GET');
+        $this->method = HttpMethod::parse($server['REQUEST_METHOD'] ?? 'GET');
         $this->path = parse_url($server['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
         $this->queryParams = $query ?? $_GET;
         $this->bodyParams = $body ?? $_POST;

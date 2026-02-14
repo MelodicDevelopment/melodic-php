@@ -1,0 +1,23 @@
+{
+    "name": "melodic/framework",
+    "description": "A modern PHP 8.2+ framework with CQRS, JWT authentication, and middleware pipeline",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.2",
+        "firebase/php-jwt": "^6.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Melodic\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Example\\": "example/src/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

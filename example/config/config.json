@@ -1,0 +1,37 @@
+{
+    "app": {
+        "name": "Melodic Example App",
+        "debug": true
+    },
+    "database": {
+        "driver": "sqlite",
+        "dsn": "sqlite::memory:",
+        "username": null,
+        "password": null
+    },
+    "auth": {
+        "api": {
+            "enabled": true
+        },
+        "web": {
+            "enabled": true
+        },
+        "oidc": {
+            "discoveryUrl": "https://sso.nhatest.com/oauth2/default/.well-known/openid-configuration",
+            "audience": "0oas3jcl6po58xavk0h7",
+            "clientId": "your-client-id"
+        },
+        "redirectUri": "http://localhost:8080/auth/callback",
+        "loginPath": "/auth/login",
+        "callbackPath": "/auth/callback",
+        "postLoginRedirect": "/",
+        "cookieName": "melodic_auth",
+        "cookieLifetime": 3600
+    },
+    "cors": {
+        "allowedOrigins": ["*"],
+        "allowedMethods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allowedHeaders": ["Content-Type", "Authorization"],
+        "maxAge": 3600
+    }
+}

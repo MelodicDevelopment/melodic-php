@@ -1,0 +1,55 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Melodic\Security;
+
+class UserContext implements UserContextInterface
+{
+    public function __construct(
+        private readonly ?User $user = null,
+    ) {
+    }
+
+    public function isAuthenticated(): bool
+    {
+        return $this->user !== null;
+    }
+
+    public function getUser(): ?User
+    {
+        return $this->user;
+    }
+
+    public function getUsername(): ?string
+    {
+        return $this->user?->username;
+    }
+
+    public function hasEntitlement(string $entitlement): bool
+    {
+        return $this->user?->hasEntitlement($entitlement) ?? false;
+    }
+
+    public function hasAnyEntitlement(string ...$entitlements): bool
+    {
+        return $this->user?->hasAnyEntitlement(...$entitlements) ?? false;
+    }
+
+    public static function anonymous(): self
+    {
+        return new self();
+    }
+
+    public static function fromClaims(array $claims): self
+    {
+        $user = new User(
+            id: (string) ($claims['sub'] ?? ''),
+            username: $claims['username'] ?? $claims['preferred_username'] ?? '',
+            email: $claims['email'] ?? '',
+            entitlements: $claims['entitlements'] ?? [],
+        );
+
+        return new self($user);
+    }
+}

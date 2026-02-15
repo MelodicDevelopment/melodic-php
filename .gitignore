@@ -1,4 +1,4 @@
 /vendor/
 composer.phar
-/.claude/
+/.claude/settings.local.json
 .DS_Store

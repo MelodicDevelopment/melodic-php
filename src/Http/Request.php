@@ -101,15 +101,18 @@ class Request
 
     public function withAttribute(string $name, mixed $value): self
     {
-        $clone = clone $this;
         $attributes = $this->attributes;
         $attributes[$name] = $value;
 
-        // Use reflection to set the readonly property on the clone
-        $ref = new \ReflectionProperty(self::class, 'attributes');
-        $ref->setValue($clone, $attributes);
-
-        return $clone;
+        return new self(
+            server: ['REQUEST_METHOD' => $this->method->value, 'REQUEST_URI' => $this->path],
+            query: $this->queryParams,
+            body: $this->bodyParams,
+            headers: $this->headers,
+            attributes: $attributes,
+            rawBody: $this->rawBody,
+            cookies: $this->cookies,
+        );
     }
 
     public static function capture(): self

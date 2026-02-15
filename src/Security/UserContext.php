@@ -8,6 +8,7 @@ class UserContext implements UserContextInterface
 {
     public function __construct(
         private readonly ?User $user = null,
+        private readonly ?string $provider = null,
     ) {
     }
 
@@ -36,6 +37,11 @@ class UserContext implements UserContextInterface
         return $this->user?->hasAnyEntitlement(...$entitlements) ?? false;
     }
 
+    public function getProvider(): ?string
+    {
+        return $this->provider;
+    }
+
     public static function anonymous(): self
     {
         return new self();
@@ -50,6 +56,6 @@ class UserContext implements UserContextInterface
             entitlements: $claims['entitlements'] ?? [],
         );
 
-        return new self($user);
+        return new self($user, $claims['provider'] ?? null);
     }
 }

@@ -16,17 +16,44 @@
         "web": {
             "enabled": true
         },
-        "oidc": {
-            "discoveryUrl": "https://sso.nhatest.com/oauth2/default/.well-known/openid-configuration",
-            "audience": "0oas3jcl6po58xavk0h7",
-            "clientId": "your-client-id"
-        },
-        "redirectUri": "http://localhost:8080/auth/callback",
         "loginPath": "/auth/login",
         "callbackPath": "/auth/callback",
         "postLoginRedirect": "/",
         "cookieName": "melodic_auth",
-        "cookieLifetime": 3600
+        "cookieLifetime": 3600,
+        "local": {
+            "signingKey": "change-this-to-a-secure-256-bit-secret-key",
+            "issuer": "melodic-app",
+            "audience": "melodic-app",
+            "tokenLifetime": 3600
+        },
+        "providers": {
+            "google": {
+                "type": "oidc",
+                "label": "Sign in with Google",
+                "discoveryUrl": "https://accounts.google.com/.well-known/openid-configuration",
+                "clientId": "your-google-client-id.apps.googleusercontent.com",
+                "clientSecret": "your-google-client-secret",
+                "redirectUri": "http://localhost:8080/auth/callback/google",
+                "scopes": "openid profile email"
+            },
+            "facebook": {
+                "type": "oauth2",
+                "label": "Sign in with Facebook",
+                "authorizeUrl": "https://www.facebook.com/v21.0/dialog/oauth",
+                "tokenUrl": "https://graph.facebook.com/v21.0/oauth/access_token",
+                "userInfoUrl": "https://graph.facebook.com/me?fields=id,name,email",
+                "clientId": "your-facebook-app-id",
+                "clientSecret": "your-facebook-app-secret",
+                "redirectUri": "http://localhost:8080/auth/callback/facebook",
+                "scopes": "email public_profile",
+                "claimMap": {
+                    "sub": "id",
+                    "username": "name",
+                    "email": "email"
+                }
+            }
+        }
     },
     "cors": {
         "allowedOrigins": ["*"],

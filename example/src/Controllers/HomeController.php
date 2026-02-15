@@ -12,6 +12,7 @@ class HomeController extends MvcController
     public function index(): Response
     {
         $this->viewBag->title = 'Home';
+        $this->viewBag->userContext = $this->getUserContext();
         $this->setLayout('layouts/main');
 
         return $this->view('home/index', [
@@ -22,6 +23,7 @@ class HomeController extends MvcController
     public function about(): Response
     {
         $this->viewBag->title = 'About';
+        $this->viewBag->userContext = $this->getUserContext();
         $this->setLayout('layouts/main');
 
         return $this->view('home/about');

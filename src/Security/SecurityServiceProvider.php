@@ -19,34 +19,66 @@ class SecurityServiceProvider extends ServiceProvider
             return AuthConfig::fromArray($config->get('auth', []));
         });
 
-        $container->singleton(OidcProvider::class, function (Container $c) {
-            /** @var AuthConfig $config */
-            $config = $c->get(AuthConfig::class);
+        $container->singleton(SessionManager::class, function () {
+            return new SessionManager();
+        });
 
-            // Use system temp directory for cache
+        $container->singleton(AuthProviderRegistry::class, function (Container $c) {
+            /** @var AuthConfig $authConfig */
+            $authConfig = $c->get(AuthConfig::class);
+            $registry = new AuthProviderRegistry();
+
             $cacheDir = sys_get_temp_dir() . '/melodic_oidc_cache';
+            $localAuthConfig = $authConfig->getLocalAuth();
 
-            return new OidcProvider($config->discoveryUrl, $cacheDir);
+            foreach ($authConfig->getProviders() as $name => $providerConfig) {
+                $provider = match ($providerConfig->type) {
+                    AuthProviderType::Oidc => new OidcAuthProvider($providerConfig, $cacheDir),
+                    AuthProviderType::OAuth2 => new OAuth2AuthProvider(
+                        $providerConfig,
+                        $localAuthConfig ?? throw new SecurityException(
+                            'OAuth2 providers require a "local" signing config in the auth section.'
+                        ),
+                        new ClaimMapper($providerConfig->claimMap),
+                    ),
+                    AuthProviderType::Local => new LocalAuthProvider(
+                        $providerConfig,
+                        $localAuthConfig ?? throw new SecurityException(
+                            'Local provider requires a "local" signing config in the auth section.'
+                        ),
+                        $c->get(LocalAuthenticatorInterface::class),
+                    ),
+                };
+
+                $registry->register($provider);
+            }
+
+            return $registry;
         });
 
         $container->singleton(JwtValidator::class, function (Container $c) {
-            /** @var AuthConfig $config */
-            $config = $c->get(AuthConfig::class);
-            /** @var OidcProvider $provider */
-            $provider = $c->get(OidcProvider::class);
+            /** @var AuthConfig $authConfig */
+            $authConfig = $c->get(AuthConfig::class);
+            /** @var AuthProviderRegistry $registry */
+            $registry = $c->get(AuthProviderRegistry::class);
 
-            return new JwtValidator($provider, $config->audience ?: null);
+            return new JwtValidator($registry, $authConfig->getLocalAuth());
         });
 
-        $container->singleton(OAuthClient::class, function (Container $c) {
-            return new OAuthClient(
-                $c->get(OidcProvider::class),
+        $container->singleton(AuthLoginRenderer::class, function (Container $c) {
+            return new AuthLoginRenderer(
                 $c->get(AuthConfig::class),
+                $c->get(AuthProviderRegistry::class),
             );
         });
 
-        $container->singleton(SessionManager::class, function () {
-            return new SessionManager();
+        $container->singleton(AuthCallbackMiddleware::class, function (Container $c) {
+            return new AuthCallbackMiddleware(
+                $c->get(AuthConfig::class),
+                $c->get(AuthProviderRegistry::class),
+                $c->get(SessionManager::class),
+                $c->get(AuthLoginRenderer::class),
+            );
         });
 
         $container->singleton(ApiAuthenticationMiddleware::class, function (Container $c) {
@@ -59,15 +91,6 @@ class SecurityServiceProvider extends ServiceProvider
         $container->singleton(WebAuthenticationMiddleware::class, function (Container $c) {
             return new WebAuthenticationMiddleware(
                 $c->get(AuthConfig::class),
-                $c->get(JwtValidator::class),
-                $c->get(SessionManager::class),
-            );
-        });
-
-        $container->singleton(OAuthCallbackMiddleware::class, function (Container $c) {
-            return new OAuthCallbackMiddleware(
-                $c->get(AuthConfig::class),
-                $c->get(OAuthClient::class),
                 $c->get(JwtValidator::class),
                 $c->get(SessionManager::class),
             );

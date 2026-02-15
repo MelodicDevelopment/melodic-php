@@ -7,9 +7,12 @@
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 0; background: #f5f5f5; }
         .container { max-width: 960px; margin: 0 auto; padding: 2rem; }
-        nav { background: #2d3436; padding: 1rem 2rem; }
+        nav { background: #2d3436; padding: 1rem 2rem; display: flex; align-items: center; }
         nav a { color: #dfe6e9; text-decoration: none; margin-right: 1.5rem; }
         nav a:hover { color: #74b9ff; }
+        nav .spacer { flex: 1; }
+        nav .user-info { color: #b2bec3; font-size: 0.875rem; margin-right: 1rem; }
+        nav .login-link { color: #74b9ff; margin-right: 0; }
         h1 { color: #2d3436; }
         .content { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
     </style>
@@ -20,6 +23,14 @@
         <a href="/">Home</a>
         <a href="/about">About</a>
         <a href="/api/users">API: Users</a>
+        <span class="spacer"></span>
+        <?php $uc = $viewBag->userContext ?? null; ?>
+        <?php if ($uc && $uc->isAuthenticated()): ?>
+            <span class="user-info"><?= htmlspecialchars($uc->getUsername() ?: $uc->getUser()->email) ?></span>
+            <a href="/auth/logout" class="login-link">Logout</a>
+        <?php else: ?>
+            <a href="/auth/login" class="login-link">Login</a>
+        <?php endif; ?>
     </nav>
     <div class="container">
         <div class="content">

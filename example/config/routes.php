@@ -6,7 +6,7 @@ use Example\Controllers\HomeController;
 use Example\Controllers\UserApiController;
 use Melodic\Routing\Router;
 use Melodic\Security\ApiAuthenticationMiddleware;
-use Melodic\Security\OAuthCallbackMiddleware;
+use Melodic\Security\AuthCallbackMiddleware;
 use Melodic\Security\WebAuthenticationMiddleware;
 
 return function (Router $router): void {
@@ -14,11 +14,14 @@ return function (Router $router): void {
     $router->get('/', HomeController::class, 'index');
     $router->get('/about', HomeController::class, 'about');
 
-    // Auth endpoints (login + callback) — handled by OAuthCallbackMiddleware
+    // Auth endpoints — handled by AuthCallbackMiddleware
     $router->group('/auth', function (Router $router) {
         $router->get('/login', HomeController::class, 'index');
-        $router->get('/callback', HomeController::class, 'index');
-    }, middleware: [OAuthCallbackMiddleware::class]);
+        $router->get('/login/{provider}', HomeController::class, 'index');
+        $router->get('/callback/{provider}', HomeController::class, 'index');
+        $router->post('/callback/{provider}', HomeController::class, 'index');
+        $router->get('/logout', HomeController::class, 'index');
+    }, middleware: [AuthCallbackMiddleware::class]);
 
     // Protected web routes
     $router->group('/admin', function (Router $router) {

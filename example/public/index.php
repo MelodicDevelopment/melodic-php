@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../vendor/autoload.php';
 
+use Example\Security\ExampleLoginRenderer;
 use Example\Services\UserService;
 use Example\Services\UserServiceInterface;
 use Melodic\Core\Application;
@@ -11,6 +12,7 @@ use Melodic\Data\DbContext;
 use Melodic\Data\DbContextInterface;
 use Melodic\Http\Middleware\CorsMiddleware;
 use Melodic\Http\Middleware\JsonBodyParserMiddleware;
+use Melodic\Security\AuthLoginRendererInterface;
 use Melodic\Security\SecurityServiceProvider;
 use Example\Middleware\RequestTimingMiddleware;
 use Melodic\View\ViewEngine;
@@ -57,6 +59,9 @@ $app->services(function ($container) use ($app) {
 
     // Services
     $container->bind(UserServiceInterface::class, UserService::class);
+
+    // Custom login page renderer (overrides the framework default)
+    $container->singleton(AuthLoginRendererInterface::class, ExampleLoginRenderer::class);
 });
 
 // Add global middleware (applied to all requests)

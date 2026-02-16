@@ -18,11 +18,16 @@ class AuthConfig
         public readonly string $postLoginRedirect = '/',
         public readonly string $cookieName = 'melodic_auth',
         public readonly int $cookieLifetime = 3600,
+        public readonly LoginPageConfig $loginPage = new LoginPageConfig(),
     ) {
     }
 
     public static function fromArray(array $config): self
     {
+        $loginPage = isset($config['loginPage']) && is_array($config['loginPage'])
+            ? LoginPageConfig::fromArray($config['loginPage'])
+            : new LoginPageConfig();
+
         $instance = new self(
             apiAuthEnabled: (bool) ($config['api']['enabled'] ?? true),
             webAuthEnabled: (bool) ($config['web']['enabled'] ?? true),
@@ -31,6 +36,7 @@ class AuthConfig
             postLoginRedirect: (string) ($config['postLoginRedirect'] ?? '/'),
             cookieName: (string) ($config['cookieName'] ?? 'melodic_auth'),
             cookieLifetime: (int) ($config['cookieLifetime'] ?? 3600),
+            loginPage: $loginPage,
         );
 
         if (isset($config['local']) && is_array($config['local'])) {

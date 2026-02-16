@@ -65,7 +65,7 @@ class SecurityServiceProvider extends ServiceProvider
             return new JwtValidator($registry, $authConfig->getLocalAuth());
         });
 
-        $container->singleton(AuthLoginRenderer::class, function (Container $c) {
+        $container->singleton(AuthLoginRendererInterface::class, function (Container $c) {
             return new AuthLoginRenderer(
                 $c->get(AuthConfig::class),
                 $c->get(AuthProviderRegistry::class),
@@ -77,7 +77,7 @@ class SecurityServiceProvider extends ServiceProvider
                 $c->get(AuthConfig::class),
                 $c->get(AuthProviderRegistry::class),
                 $c->get(SessionManager::class),
-                $c->get(AuthLoginRenderer::class),
+                $c->get(AuthLoginRendererInterface::class),
             );
         });
 

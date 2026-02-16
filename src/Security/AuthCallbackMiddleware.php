@@ -16,7 +16,7 @@ class AuthCallbackMiddleware implements MiddlewareInterface
         private readonly AuthConfig $config,
         private readonly AuthProviderRegistry $registry,
         private readonly SessionManager $session,
-        private readonly AuthLoginRenderer $loginRenderer,
+        private readonly AuthLoginRendererInterface $loginRenderer,
     ) {
     }
 

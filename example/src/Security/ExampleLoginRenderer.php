@@ -140,18 +140,12 @@ HTML;
 		}
 
 		.brand-icon {
-			width: 48px;
-			height: 48px;
-			background: linear-gradient(135deg, var(--accent), #63b3ff);
-			border-radius: 14px;
 			display: inline-flex;
 			align-items: center;
-			justify-content: center;
 			margin-bottom: 1rem;
-			box-shadow: 0 4px 24px var(--accent-glow);
 		}
 
-		.brand-icon svg { width: 26px; height: 26px; }
+		.brand-icon svg { width: 64px; height: auto; }
 
 		.brand h1 {
 			font-size: 1.5rem;
@@ -316,9 +310,10 @@ HTML;
 <body>
 	<div class="brand">
 		<div class="brand-icon">
-			<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				<path d="M9 18V5l12-2v13"/>
-				<circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+			<svg viewBox="0 0 3125 1875" fill-rule="evenodd">
+				<path d="M983.632,984l-871.984,-872.312l0,1571.75l454.496,0l0,-493.663l417.488,417.923l0,-623.695Z" fill="#ff0082"/>
+				<path d="M983.01,984l871.983,-872.312l0,1571.75l-454.496,0l0,-493.663l-417.487,417.923l0,-623.695Z" fill="#49216d"/>
+				<path d="M2336.05,514.918l0,765.288c211.187,0 382.644,-171.457 382.644,-382.644c0,-211.187 -171.457,-382.644 -382.644,-382.644Z" fill="#009dd9"/>
 			</svg>
 		</div>
 		<h1>Melodic Example</h1>

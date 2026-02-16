@@ -70,17 +70,8 @@
 
         .nav-brand:hover { text-decoration: none; }
 
-        .nav-brand-icon {
-            width: 28px; height: 28px;
-            background: linear-gradient(135deg, var(--accent), #63b3ff);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 8px var(--accent-glow);
-        }
-
-        .nav-brand-icon svg { width: 16px; height: 16px; }
+        .nav-brand-icon { display: flex; align-items: center; }
+        .nav-brand-icon svg { width: 32px; height: auto; }
 
         .nav-links {
             display: flex;
@@ -342,9 +333,10 @@
     <div class="top-nav">
         <a href="/" class="nav-brand">
             <span class="nav-brand-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M9 18V5l12-2v13"/>
-                    <circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                <svg viewBox="0 0 3125 1875" fill-rule="evenodd">
+                    <path d="M983.632,984l-871.984,-872.312l0,1571.75l454.496,0l0,-493.663l417.488,417.923l0,-623.695Z" fill="#ff0082"/>
+                    <path d="M983.01,984l871.983,-872.312l0,1571.75l-454.496,0l0,-493.663l-417.487,417.923l0,-623.695Z" fill="#49216d"/>
+                    <path d="M2336.05,514.918l0,765.288c211.187,0 382.644,-171.457 382.644,-382.644c0,-211.187 -171.457,-382.644 -382.644,-382.644Z" fill="#009dd9"/>
                 </svg>
             </span>
             Melodic
@@ -352,8 +344,8 @@
         <div class="nav-links">
             <a href="/">Home</a>
             <a href="/docs" class="active">Docs</a>
-            <a href="/about">About</a>
             <a href="/api/users">API</a>
+            <a href="https://melodic.dev" target="_blank" rel="noopener">melodic.dev</a>
         </div>
         <span class="spacer"></span>
         <div class="nav-user">
@@ -410,7 +402,7 @@
             <?php endif; ?>
 
             <div class="docs-footer">
-                Powered by <a href="#">Melodic PHP Framework</a>
+                Built with <a href="/">Melodic PHP Framework</a> &mdash; <a href="https://melodic.dev" target="_blank" rel="noopener">melodic.dev</a>
             </div>
         </div>
     </main>

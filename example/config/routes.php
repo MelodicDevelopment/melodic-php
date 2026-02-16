@@ -15,7 +15,6 @@ return function (Router $router): void {
     // Public routes (with optional auth — user context available if logged in)
     $router->group('', function (Router $router) {
         $router->get('/', HomeController::class, 'index');
-        $router->get('/about', HomeController::class, 'about');
     }, middleware: [OptionalWebAuthMiddleware::class]);
 
     // Documentation routes

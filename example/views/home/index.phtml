@@ -8,6 +8,12 @@
     <li>MVC views with layouts and sections</li>
 </ul>
 
+<?php if ($viewBag->userContext?->isAuthenticated()): ?>
+      <p>Welcome, <?= htmlspecialchars($viewBag->userContext->getUsername()) ?></p>
+  <?php else: ?>
+      <a href="/auth/login">Log in</a>
+  <?php endif; ?>
+
 <?php $this->beginSection('head') ?>
 <meta name="description" content="Melodic PHP Framework Example">
 <?php $this->endSection() ?>

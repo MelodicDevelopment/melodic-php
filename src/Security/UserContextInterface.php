@@ -15,4 +15,8 @@ interface UserContextInterface
     public function hasEntitlement(string $entitlement): bool;
 
     public function hasAnyEntitlement(string ...$entitlements): bool;
+
+    public function getClaim(string $key, mixed $default = null): mixed;
+
+    public function getClaims(): array;
 }

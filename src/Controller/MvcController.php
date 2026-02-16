@@ -45,6 +45,6 @@ class MvcController extends Controller
 
     protected function getUserContext(): ?UserContextInterface
     {
-        return $this->request->getAttribute('userContext');
+		return $this->request->getAttribute('userContext');
     }
 }

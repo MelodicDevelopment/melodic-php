@@ -9,6 +9,7 @@ class UserContext implements UserContextInterface
     public function __construct(
         private readonly ?User $user = null,
         private readonly ?string $provider = null,
+        private readonly array $claims = [],
     ) {
     }
 
@@ -42,6 +43,16 @@ class UserContext implements UserContextInterface
         return $this->provider;
     }
 
+    public function getClaim(string $key, mixed $default = null): mixed
+    {
+        return $this->claims[$key] ?? $default;
+    }
+
+    public function getClaims(): array
+    {
+        return $this->claims;
+    }
+
     public static function anonymous(): self
     {
         return new self();
@@ -51,11 +62,11 @@ class UserContext implements UserContextInterface
     {
         $user = new User(
             id: (string) ($claims['sub'] ?? ''),
-            username: $claims['username'] ?? $claims['preferred_username'] ?? '',
+            username: $claims['username'] ?? $claims['preferred_username'] ?? $claims['name'] ?? '',
             email: $claims['email'] ?? '',
             entitlements: $claims['entitlements'] ?? [],
         );
 
-        return new self($user, $claims['provider'] ?? null);
+        return new self($user, $claims['provider'] ?? null, $claims);
     }
 }

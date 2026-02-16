@@ -7,12 +7,15 @@ use Example\Controllers\UserApiController;
 use Melodic\Routing\Router;
 use Melodic\Security\ApiAuthenticationMiddleware;
 use Melodic\Security\AuthCallbackMiddleware;
+use Melodic\Security\OptionalWebAuthMiddleware;
 use Melodic\Security\WebAuthenticationMiddleware;
 
 return function (Router $router): void {
-    // Public routes (no auth)
-    $router->get('/', HomeController::class, 'index');
-    $router->get('/about', HomeController::class, 'about');
+    // Public routes (with optional auth — user context available if logged in)
+    $router->group('', function (Router $router) {
+        $router->get('/', HomeController::class, 'index');
+        $router->get('/about', HomeController::class, 'about');
+    }, middleware: [OptionalWebAuthMiddleware::class]);
 
     // Auth endpoints — handled by AuthCallbackMiddleware
     $router->group('/auth', function (Router $router) {

@@ -16,7 +16,10 @@ class Response
 
     public function withStatus(int $code): self
     {
-        return new self($code, $this->body, $this->headers);
+        $response = new self($code, $this->body, $this->headers);
+        $response->cookies = $this->cookies;
+
+        return $response;
     }
 
     public function withHeader(string $name, string $value): self
@@ -24,18 +27,25 @@ class Response
         $headers = $this->headers;
         $headers[$name] = $value;
 
-        return new self($this->statusCode, $this->body, $headers);
+        $response = new self($this->statusCode, $this->body, $headers);
+        $response->cookies = $this->cookies;
+
+        return $response;
     }
 
     public function withBody(string $body): self
     {
-        return new self($this->statusCode, $body, $this->headers);
+        $response = new self($this->statusCode, $body, $this->headers);
+        $response->cookies = $this->cookies;
+
+        return $response;
     }
 
     public function withCookie(string $name, string $value, array $options = []): self
     {
-        $clone = clone $this;
-        $clone->cookies[$name] = [
+        $response = new self($this->statusCode, $this->body, $this->headers);
+        $response->cookies = $this->cookies;
+        $response->cookies[$name] = [
             'value' => $value,
             'expires' => $options['expires'] ?? 0,
             'path' => $options['path'] ?? '/',
@@ -45,7 +55,7 @@ class Response
             'samesite' => $options['samesite'] ?? 'Lax',
         ];
 
-        return $clone;
+        return $response;
     }
 
     public function getStatusCode(): int

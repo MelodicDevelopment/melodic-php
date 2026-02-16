@@ -1,0 +1,425 @@
+<h1>Services</h1>
+<p>Services form the business logic layer in Melodic. They sit between controllers and data access, encapsulating domain logic, validation, and orchestration. Controllers depend on service interfaces, and services use Query and Command objects to interact with the database through DbContext.</p>
+
+<pre><code>Controller &rarr; Service &rarr; Query/Command &rarr; DbContext &rarr; Database</code></pre>
+
+<h2>The Service Base Class</h2>
+<p><code>Melodic\Service\Service</code> provides a foundation for your service classes with database context management built in.</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace Melodic\Service;
+
+use Melodic\Data\DbContextInterface;
+
+class Service
+{
+    public function __construct(
+        protected readonly DbContextInterface $context,
+        protected readonly ?DbContextInterface $readOnlyContext = null,
+    ) {
+    }
+
+    public function __destruct()
+    {
+        // Cleanup/disposal hook &mdash; override in subclasses as needed.
+    }
+
+    protected function getContext(): DbContextInterface
+    {
+        return $this-&gt;context;
+    }
+
+    protected function getReadOnlyContext(): DbContextInterface
+    {
+        return $this-&gt;readOnlyContext ?? $this-&gt;context;
+    }
+}</code></pre>
+
+<h3>Constructor</h3>
+<p>The constructor accepts two parameters, both auto-wired by the DI container:</p>
+
+<table>
+    <tr>
+        <th>Parameter</th>
+        <th>Type</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>$context</code></td>
+        <td><code>DbContextInterface</code></td>
+        <td>Primary (read-write) database context &mdash; required</td>
+    </tr>
+    <tr>
+        <td><code>$readOnlyContext</code></td>
+        <td><code>?DbContextInterface</code></td>
+        <td>Optional read-only context for read replicas &mdash; defaults to null</td>
+    </tr>
+</table>
+
+<h3>Accessor Methods</h3>
+<ul>
+    <li><code>getContext()</code> &mdash; returns the write-capable database context (<code>$this-&gt;context</code>)</li>
+    <li><code>getReadOnlyContext()</code> &mdash; returns the read-only context if one was provided, otherwise falls back to the write context</li>
+</ul>
+
+<div class="callout callout-tip">
+    <p><strong>Tip:</strong> You can access the context directly via <code>$this-&gt;context</code> since it is a <code>protected</code> property, or use the <code>getContext()</code> accessor &mdash; both work identically.</p>
+</div>
+
+<h3>Destructor</h3>
+<p>The base class provides an empty <code>__destruct()</code> method you can override in subclasses for cleanup tasks like closing connections or releasing resources.</p>
+
+<h2>The Service Layer Pattern</h2>
+<p>The service layer enforces a clear separation of responsibilities:</p>
+
+<ul>
+    <li><strong>Controllers</strong> handle HTTP concerns &mdash; reading request data, calling service methods, and returning responses</li>
+    <li><strong>Services</strong> encapsulate business logic &mdash; validation, orchestration, and data access coordination</li>
+    <li><strong>Queries and Commands</strong> own the SQL and execute through DbContext</li>
+</ul>
+
+<div class="callout callout-warning">
+    <p><strong>Important:</strong> Services should never return <code>Response</code> objects. That is the controller's responsibility. Services return domain models, scalar values, or throw exceptions &mdash; the controller decides how to represent the result as HTTP.</p>
+</div>
+
+<p>This layering keeps each class focused and testable. You can unit test services without HTTP concerns and swap controller implementations without touching business logic.</p>
+
+<h2>Creating a Service Interface</h2>
+<p>Define an interface that describes the operations your service provides. This is the contract that controllers depend on.</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Services;
+
+use App\Models\UserModel;
+
+interface UserServiceInterface
+{
+    /** @return UserModel[] */
+    public function getAll(): array;
+
+    public function getById(int $id): ?UserModel;
+
+    public function create(string $username, string $email): int;
+
+    public function update(int $id, string $email): bool;
+
+    public function delete(int $id): bool;
+}</code></pre>
+
+<div class="callout callout-info">
+    <p><strong>Why interfaces?</strong> Binding controllers to interfaces rather than concrete classes lets you swap implementations without changing any controller code. This is especially useful for testing (mock implementations) and for evolving your architecture over time.</p>
+</div>
+
+<h2>Implementing a Service</h2>
+<p>Extend <code>Service</code>, implement your interface, and use Query/Command objects in each method. The DI container auto-wires <code>DbContextInterface</code> into the base class constructor.</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Services;
+
+use App\Commands\CreateUserCommand;
+use App\Commands\DeleteUserCommand;
+use App\Commands\UpdateUserEmailCommand;
+use App\Models\UserModel;
+use App\Queries\GetAllUsersQuery;
+use App\Queries\GetUserByIdQuery;
+use Melodic\Service\Service;
+
+class UserService extends Service implements UserServiceInterface
+{
+    /**
+     * @return UserModel[]
+     */
+    public function getAll(): array
+    {
+        return (new GetAllUsersQuery())-&gt;execute($this-&gt;context);
+    }
+
+    public function getById(int $id): ?UserModel
+    {
+        return (new GetUserByIdQuery($id))-&gt;execute($this-&gt;context);
+    }
+
+    public function create(string $username, string $email): int
+    {
+        (new CreateUserCommand($username, $email))-&gt;execute($this-&gt;context);
+
+        return $this-&gt;context-&gt;lastInsertId();
+    }
+
+    public function update(int $id, string $email): bool
+    {
+        $affected = (new UpdateUserEmailCommand($id, $email))-&gt;execute($this-&gt;context);
+
+        return $affected &gt; 0;
+    }
+
+    public function delete(int $id): bool
+    {
+        $affected = (new DeleteUserCommand($id))-&gt;execute($this-&gt;context);
+
+        return $affected &gt; 0;
+    }
+}</code></pre>
+
+<p>Notice the pattern in each method:</p>
+<ol>
+    <li>Create a new Query or Command with the required parameters</li>
+    <li>Call <code>execute()</code>, passing <code>$this-&gt;context</code></li>
+    <li>Return the result in a form the controller can use (model, ID, boolean, etc.)</li>
+</ol>
+
+<div class="callout callout-tip">
+    <p><strong>Tip:</strong> There is no need to declare a constructor in your service class. The DI container resolves the base <code>Service</code> constructor parameters automatically. Only add a constructor if you need additional injected dependencies.</p>
+</div>
+
+<h2>Registering Services in the Container</h2>
+<p>Bind your service interface to its implementation in the DI container. This is typically done in the application bootstrap.</p>
+
+<pre><code>$app-&gt;services(function ($container) {
+    // Interface binding &mdash; transient (new instance per resolution)
+    $container-&gt;bind(UserServiceInterface::class, UserService::class);
+});</code></pre>
+
+<p>When the container resolves <code>UserServiceInterface</code>, it creates a <code>UserService</code> instance and auto-wires <code>DbContextInterface</code> into the base class constructor. No manual wiring needed.</p>
+
+<h3>Registration Options</h3>
+<table>
+    <tr>
+        <th>Method</th>
+        <th>Lifecycle</th>
+        <th>Use When</th>
+    </tr>
+    <tr>
+        <td><code>bind(Interface::class, Implementation::class)</code></td>
+        <td>Transient</td>
+        <td>A new instance is created every time the service is resolved &mdash; the default for most services</td>
+    </tr>
+    <tr>
+        <td><code>singleton(Interface::class, fn() =&gt; new Service(...))</code></td>
+        <td>Singleton</td>
+        <td>The same instance is reused for every resolution &mdash; use for stateful or expensive services</td>
+    </tr>
+</table>
+
+<pre><code>// Transient &mdash; new instance each time
+$container-&gt;bind(UserServiceInterface::class, UserService::class);
+
+// Singleton &mdash; same instance shared throughout the request
+$container-&gt;singleton(ReportServiceInterface::class, function () use ($container) {
+    return new ReportService(
+        $container-&gt;get(DbContextInterface::class),
+    );
+});</code></pre>
+
+<h2>Read/Write Separation</h2>
+<p>The optional <code>$readOnlyContext</code> parameter on the base <code>Service</code> class supports read replica configurations. Register two separate DbContext instances and route queries through the read-only connection.</p>
+
+<pre><code>$app-&gt;services(function ($container) use ($app) {
+    // Write context &mdash; primary database
+    $container-&gt;singleton('db.write', function () use ($app) {
+        return new DbContext(
+            $app-&gt;config('database.primary.dsn'),
+            $app-&gt;config('database.primary.username'),
+            $app-&gt;config('database.primary.password'),
+        );
+    });
+
+    // Read context &mdash; replica database
+    $container-&gt;singleton('db.read', function () use ($app) {
+        return new DbContext(
+            $app-&gt;config('database.replica.dsn'),
+            $app-&gt;config('database.replica.username'),
+            $app-&gt;config('database.replica.password'),
+        );
+    });
+
+    // Also bind the write context as the default DbContextInterface
+    $container-&gt;singleton(DbContextInterface::class, function () use ($container) {
+        return $container-&gt;get('db.write');
+    });
+
+    // Service with both contexts
+    $container-&gt;bind(UserServiceInterface::class, function () use ($container) {
+        return new UserService(
+            $container-&gt;get('db.write'),
+            $container-&gt;get('db.read'),
+        );
+    });
+});</code></pre>
+
+<p>Then in your service, route reads and writes to the appropriate context:</p>
+
+<pre><code>class UserService extends Service implements UserServiceInterface
+{
+    public function getAll(): array
+    {
+        // Reads go to the replica
+        return (new GetAllUsersQuery())-&gt;execute($this-&gt;getReadOnlyContext());
+    }
+
+    public function create(string $username, string $email): int
+    {
+        // Writes go to the primary
+        (new CreateUserCommand($username, $email))-&gt;execute($this-&gt;getContext());
+
+        return $this-&gt;getContext()-&gt;lastInsertId();
+    }
+}</code></pre>
+
+<div class="callout callout-info">
+    <p><strong>Note:</strong> If no read-only context is provided, <code>getReadOnlyContext()</code> falls back to the write context. This means you can add read/write separation later without changing any service code &mdash; just update the DI registration.</p>
+</div>
+
+<h2>The Full Chain</h2>
+<p>Here is the complete request flow from HTTP to database and back, showing how each layer connects.</p>
+
+<h3>1. Controller Receives the Request</h3>
+<p>The controller depends on a service interface, injected by the DI container:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Controllers;
+
+use App\Services\UserServiceInterface;
+use Melodic\Controller\ApiController;
+use Melodic\Http\JsonResponse;
+use Melodic\Http\Response;
+
+class UserApiController extends ApiController
+{
+    public function __construct(
+        private readonly UserServiceInterface $userService,
+    ) {}
+
+    public function index(): JsonResponse
+    {
+        $users = $this-&gt;userService-&gt;getAll();
+
+        return $this-&gt;json(array_map(fn($u) =&gt; $u-&gt;toArray(), $users));
+    }
+
+    public function show(string $id): JsonResponse
+    {
+        $user = $this-&gt;userService-&gt;getById((int) $id);
+
+        if ($user === null) {
+            return $this-&gt;notFound(['error' =&gt; 'User not found']);
+        }
+
+        return $this-&gt;json($user-&gt;toArray());
+    }
+
+    public function store(): JsonResponse
+    {
+        $body = $this-&gt;request-&gt;body();
+        $username = $body['username'] ?? null;
+        $email = $body['email'] ?? null;
+
+        if ($username === null || $email === null) {
+            return $this-&gt;badRequest(['error' =&gt; 'Username and email are required']);
+        }
+
+        $id = $this-&gt;userService-&gt;create($username, $email);
+        $user = $this-&gt;userService-&gt;getById($id);
+
+        return $this-&gt;created($user-&gt;toArray(), "/api/users/{$id}");
+    }
+
+    public function destroy(string $id): Response
+    {
+        $deleted = $this-&gt;userService-&gt;delete((int) $id);
+
+        if (!$deleted) {
+            return $this-&gt;notFound(['error' =&gt; 'User not found']);
+        }
+
+        return $this-&gt;noContent();
+    }
+}</code></pre>
+
+<h3>2. Service Executes Business Logic</h3>
+<p>The service creates Query/Command objects and executes them:</p>
+
+<pre><code>// In UserService::getById()
+return (new GetUserByIdQuery($id))-&gt;execute($this-&gt;context);</code></pre>
+
+<h3>3. Query/Command Runs Against DbContext</h3>
+<p>The query calls <code>queryFirst()</code> on the DbContext, which prepares and executes the SQL:</p>
+
+<pre><code>// In GetUserByIdQuery::execute()
+return $context-&gt;queryFirst(UserModel::class, $this-&gt;sql, ['id' =&gt; $this-&gt;id]);</code></pre>
+
+<h3>4. Result Flows Back</h3>
+<p>DbContext hydrates the result into a <code>UserModel</code>, the query returns it to the service, the service returns it to the controller, and the controller converts it to a JSON response.</p>
+
+<pre><code>DbContext::queryFirst() &rarr; UserModel
+    &rarr; GetUserByIdQuery::execute() &rarr; UserModel
+        &rarr; UserService::getById() &rarr; ?UserModel
+            &rarr; UserApiController::show() &rarr; JsonResponse</code></pre>
+
+<h2>Best Practices</h2>
+
+<h3>Keep Services Focused</h3>
+<p>One service per domain entity or aggregate. A <code>UserService</code> handles user operations; an <code>OrderService</code> handles order operations. If a service grows too large, split it.</p>
+
+<h3>Return Domain Models, Not Raw Arrays</h3>
+<p>Services should return typed model objects. This gives you IDE autocompletion, static analysis support, and a clear contract for what each method returns.</p>
+
+<pre><code>// Good &mdash; returns a typed model
+public function getById(int $id): ?UserModel
+{
+    return (new GetUserByIdQuery($id))-&gt;execute($this-&gt;context);
+}
+
+// Avoid &mdash; returns an untyped array
+public function getById(int $id): ?array
+{
+    return $this-&gt;context-&gt;queryFirst(UserModel::class, $sql, ['id' =&gt; $id])?-&gt;toArray();
+}</code></pre>
+
+<h3>Handle Business Validation in Services</h3>
+<p>Input validation (is the email format valid?) belongs in the controller. Business validation (does this username already exist?) belongs in the service.</p>
+
+<pre><code>public function create(string $username, string $email): int
+{
+    // Business validation
+    $existing = (new GetUserByUsernameQuery($username))-&gt;execute($this-&gt;context);
+    if ($existing !== null) {
+        throw new \DomainException("Username '{$username}' is already taken.");
+    }
+
+    (new CreateUserCommand($username, $email))-&gt;execute($this-&gt;context);
+
+    return $this-&gt;context-&gt;lastInsertId();
+}</code></pre>
+
+<h3>Let the DI Container Manage Lifecycle</h3>
+<p>Do not instantiate services manually. Register them in the container and let auto-wiring handle dependency resolution. This ensures consistent lifecycle management and makes testing straightforward.</p>
+
+<pre><code>// Good &mdash; container manages everything
+$container-&gt;bind(UserServiceInterface::class, UserService::class);
+
+// Avoid &mdash; manual instantiation bypasses the container
+$service = new UserService($context);</code></pre>
+
+<h3>Use Interfaces to Decouple</h3>
+<p>Always define a service interface and bind it in the container. Controllers depend on the interface, never the concrete class. This makes it easy to swap implementations for testing or to evolve your architecture.</p>
+
+<pre><code>// Controller depends on the interface
+public function __construct(
+    private readonly UserServiceInterface $userService,
+) {}
+
+// Container wires the implementation
+$container-&gt;bind(UserServiceInterface::class, UserService::class);</code></pre>

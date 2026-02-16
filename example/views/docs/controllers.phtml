@@ -1,0 +1,432 @@
+<h1>Controllers</h1>
+<p>Controllers handle HTTP requests and return responses. Melodic provides three controller classes &mdash; an abstract base with response helpers, an API controller for JSON endpoints, and an MVC controller for rendered views.</p>
+
+<h2>Controller Base Class</h2>
+<p>The abstract <code>Melodic\Controller\Controller</code> class is the foundation for all controllers. It holds the current request and provides shorthand methods for building common HTTP responses.</p>
+
+<h3>The Request Property</h3>
+<p>Every controller has access to the current request via <code>$this-&gt;request</code>. This is set automatically by the <code>RoutingMiddleware</code> before your action method is called.</p>
+
+<pre><code>public function index(): JsonResponse
+{
+    $search = $this-&gt;request-&gt;query('search');
+    $page   = $this-&gt;request-&gt;query('page', '1');
+
+    // ...
+}</code></pre>
+
+<h3>Response Helpers</h3>
+<p>The base controller provides protected methods for building common responses. Each returns a <code>Response</code> or <code>JsonResponse</code> object that the framework sends to the client.</p>
+
+<table>
+    <tr><th>Method</th><th>Status</th><th>Description</th></tr>
+    <tr><td><code>json($data, $statusCode = 200)</code></td><td>200</td><td>JSON response with any status code</td></tr>
+    <tr><td><code>created($data, $location = null)</code></td><td>201</td><td>JSON response with optional <code>Location</code> header</td></tr>
+    <tr><td><code>noContent()</code></td><td>204</td><td>Empty response body</td></tr>
+    <tr><td><code>badRequest($data = null)</code></td><td>400</td><td>Defaults to <code>['error' =&gt; 'Bad Request']</code></td></tr>
+    <tr><td><code>unauthorized($data = null)</code></td><td>401</td><td>Defaults to <code>['error' =&gt; 'Unauthorized']</code></td></tr>
+    <tr><td><code>forbidden($data = null)</code></td><td>403</td><td>Defaults to <code>['error' =&gt; 'Forbidden']</code></td></tr>
+    <tr><td><code>notFound($data = null)</code></td><td>404</td><td>Defaults to <code>['error' =&gt; 'Not Found']</code></td></tr>
+</table>
+
+<p>Each error helper accepts an optional <code>$data</code> parameter to override the default error body:</p>
+
+<pre><code>// Default error body
+return $this-&gt;notFound();
+// Response: {"error": "Not Found"}
+
+// Custom error body
+return $this-&gt;notFound(['error' =&gt; 'User not found', 'id' =&gt; $id]);
+// Response: {"error": "User not found", "id": "42"}</code></pre>
+
+<h3>Full Signatures</h3>
+<pre><code>protected function json(mixed $data, int $statusCode = 200): JsonResponse;
+protected function created(mixed $data, ?string $location = null): JsonResponse;
+protected function noContent(): Response;
+protected function notFound(mixed $data = null): JsonResponse;
+protected function badRequest(mixed $data = null): JsonResponse;
+protected function unauthorized(mixed $data = null): JsonResponse;
+protected function forbidden(mixed $data = null): JsonResponse;</code></pre>
+
+<h2>ApiController</h2>
+<p><code>Melodic\Controller\ApiController</code> extends the base <code>Controller</code> and adds access to the authenticated user context. Use this as the base class for JSON API endpoints.</p>
+
+<pre><code>use Melodic\Controller\ApiController;
+use Melodic\Http\JsonResponse;
+
+class ProfileController extends ApiController
+{
+    public function show(): JsonResponse
+    {
+        $userContext = $this-&gt;getUserContext();
+
+        if ($userContext === null) {
+            return $this-&gt;unauthorized();
+        }
+
+        return $this-&gt;json([
+            'id'       =&gt; $userContext-&gt;getUser()-&gt;id,
+            'username' =&gt; $userContext-&gt;getUsername(),
+            'email'    =&gt; $userContext-&gt;getUser()-&gt;email,
+        ]);
+    }
+}</code></pre>
+
+<h3>getUserContext()</h3>
+<pre><code>protected function getUserContext(): ?UserContextInterface</code></pre>
+
+<p>Returns the <code>UserContextInterface</code> instance that was attached to the request by the authentication middleware. If the request is not authenticated, this returns <code>null</code>.</p>
+
+<div class="callout callout-info">
+    <p><strong>Note:</strong> The user context is only available when an authentication middleware (such as <code>ApiAuthenticationMiddleware</code>) runs before the controller. Without it, <code>getUserContext()</code> will always return <code>null</code>.</p>
+</div>
+
+<h3>Constructor Injection</h3>
+<p>The DI container auto-wires controller constructors. Declare your service dependencies as constructor parameters and they will be resolved automatically:</p>
+
+<pre><code>use Melodic\Controller\ApiController;
+
+class OrderController extends ApiController
+{
+    public function __construct(
+        private readonly OrderServiceInterface $orderService,
+        private readonly InventoryServiceInterface $inventoryService,
+    ) {}
+
+    public function index(): JsonResponse
+    {
+        $orders = $this-&gt;orderService-&gt;getAll();
+        return $this-&gt;json($orders);
+    }
+}</code></pre>
+
+<h2>MvcController</h2>
+<p><code>Melodic\Controller\MvcController</code> extends the base <code>Controller</code> and adds view rendering capabilities. Use this for controllers that return HTML pages.</p>
+
+<h3>Constructor</h3>
+<p>The <code>MvcController</code> receives a <code>ViewEngine</code> instance via constructor injection. This is handled automatically by the DI container:</p>
+
+<pre><code>// MvcController constructor (provided by the framework)
+public function __construct(
+    private readonly ViewEngine $viewEngine,
+) {
+    $this-&gt;viewBag = new ViewBag();
+}</code></pre>
+
+<div class="callout callout-warning">
+    <p><strong>Important:</strong> If your subclass defines a constructor, you must call <code>parent::__construct($viewEngine)</code> and accept <code>ViewEngine</code> as a parameter so the view system is properly initialized.</p>
+</div>
+
+<pre><code>use Melodic\Controller\MvcController;
+use Melodic\View\ViewEngine;
+
+class DashboardController extends MvcController
+{
+    public function __construct(
+        ViewEngine $viewEngine,
+        private readonly StatsServiceInterface $statsService,
+    ) {
+        parent::__construct($viewEngine);
+    }
+}</code></pre>
+
+<h3>Rendering Views</h3>
+<p>Use the <code>view()</code> method to render a <code>.phtml</code> template and return an HTML response:</p>
+
+<pre><code>protected function view(string $template, array $data = []): Response</code></pre>
+
+<p>The <code>$template</code> parameter is a path relative to the views directory, without the <code>.phtml</code> extension. The <code>$data</code> array is extracted into the template scope as local variables.</p>
+
+<pre><code>public function index(): Response
+{
+    return $this-&gt;view('home/index', [
+        'message' =&gt; 'Welcome!',
+        'items'   =&gt; ['Alpha', 'Beta', 'Gamma'],
+    ]);
+}
+
+// In views/home/index.phtml:
+// $message and $items are available as local variables</code></pre>
+
+<div class="callout callout-tip">
+    <p><strong>Tip:</strong> The <code>$viewBag</code> variable is automatically included in every template's data, so you do not need to pass it explicitly in the <code>$data</code> array.</p>
+</div>
+
+<h3>Layouts</h3>
+<p>Set a layout template with <code>setLayout()</code>. The layout wraps your view content, providing shared page structure (header, navigation, footer, etc.).</p>
+
+<pre><code>public function setLayout(string $layout): void</code></pre>
+
+<p>The layout path is relative to the views directory, without the <code>.phtml</code> extension:</p>
+
+<pre><code>public function index(): Response
+{
+    $this-&gt;setLayout('layouts/main');
+    return $this-&gt;view('home/index', ['message' =&gt; 'Hello']);
+}</code></pre>
+
+<p>Inside the layout template, use <code>$this-&gt;renderBody()</code> to output the view content and <code>$this-&gt;renderSection('name')</code> to output named sections:</p>
+
+<pre><code>&lt;!-- layouts/main.phtml --&gt;
+&lt;html&gt;
+&lt;head&gt;
+    &lt;title&gt;&lt;?= htmlspecialchars($viewBag-&gt;title ?? 'My App') ?&gt;&lt;/title&gt;
+    &lt;?= $this-&gt;renderSection('head') ?&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;main&gt;&lt;?= $this-&gt;renderBody() ?&gt;&lt;/main&gt;
+    &lt;?= $this-&gt;renderSection('scripts') ?&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+<h3>The ViewBag</h3>
+<p>The <code>$this-&gt;viewBag</code> property is a dynamic key-value store for passing data to views and layouts. Set properties in the controller, then read them in templates:</p>
+
+<pre><code>// In the controller
+$this-&gt;viewBag-&gt;title = 'Dashboard';
+$this-&gt;viewBag-&gt;showSidebar = true;
+
+// In the template or layout
+&lt;title&gt;&lt;?= htmlspecialchars($viewBag-&gt;title) ?&gt;&lt;/title&gt;
+&lt;?php if ($viewBag-&gt;showSidebar): ?&gt;
+    &lt;aside&gt;...&lt;/aside&gt;
+&lt;?php endif; ?&gt;</code></pre>
+
+<p><code>ViewBag</code> uses magic <code>__get</code> and <code>__set</code> methods, so any property name works. Accessing an unset property returns <code>null</code>.</p>
+
+<h3>getUserContext()</h3>
+<p>The <code>MvcController</code> also provides <code>getUserContext()</code>, identical in behavior to the <code>ApiController</code> version. This is useful for displaying user-specific content in views:</p>
+
+<pre><code>public function index(): Response
+{
+    $this-&gt;viewBag-&gt;userContext = $this-&gt;getUserContext();
+    $this-&gt;setLayout('layouts/main');
+    return $this-&gt;view('home/index');
+}</code></pre>
+
+<h2>Route Parameter Injection</h2>
+<p>When a route has <code>{name}</code> placeholders, the captured values are passed as arguments to the controller action method. The argument names must match the placeholder names in the route pattern.</p>
+
+<pre><code>// Route: GET /posts/{postId}/comments/{commentId}
+$router-&gt;get('/posts/{postId}/comments/{commentId}', CommentController::class, 'show');
+
+// Controller action
+public function show(string $postId, string $commentId): JsonResponse
+{
+    // $postId = '7', $commentId = '23' for /posts/7/comments/23
+    $comment = $this-&gt;commentService-&gt;find((int) $postId, (int) $commentId);
+
+    if ($comment === null) {
+        return $this-&gt;notFound();
+    }
+
+    return $this-&gt;json($comment-&gt;toArray());
+}</code></pre>
+
+<div class="callout callout-warning">
+    <p><strong>Important:</strong> Route parameters are always strings. If you need integers, booleans, or other types, cast them explicitly in your action method.</p>
+</div>
+
+<h2>Accessing Request Data</h2>
+<p>The <code>$this-&gt;request</code> property provides access to all parts of the incoming HTTP request.</p>
+
+<h3>Query String Parameters</h3>
+<pre><code>// GET /users?search=john&amp;page=2
+$search = $this-&gt;request-&gt;query('search');          // 'john'
+$page   = $this-&gt;request-&gt;query('page', '1');        // '2'
+$all    = $this-&gt;request-&gt;query();                    // ['search' =&gt; 'john', 'page' =&gt; '2']</code></pre>
+
+<h3>Request Body</h3>
+<p>For JSON APIs, the <code>JsonBodyParserMiddleware</code> parses the request body into an associative array. Access it with <code>body()</code>:</p>
+
+<pre><code>// POST /users with JSON body: {"username": "john", "email": "john@example.com"}
+$body     = $this-&gt;request-&gt;body();                  // ['username' =&gt; 'john', 'email' =&gt; '...']
+$username = $this-&gt;request-&gt;body('username');          // 'john'
+$role     = $this-&gt;request-&gt;body('role', 'user');      // 'user' (default)</code></pre>
+
+<h3>Headers</h3>
+<pre><code>$contentType = $this-&gt;request-&gt;header('Content-Type');  // 'application/json'
+$custom      = $this-&gt;request-&gt;header('X-Custom');       // value or null</code></pre>
+
+<p>Header lookup is case-insensitive.</p>
+
+<h3>HTTP Method and Path</h3>
+<pre><code>$method = $this-&gt;request-&gt;method();  // HttpMethod::GET
+$path   = $this-&gt;request-&gt;path();    // '/users/42'</code></pre>
+
+<h3>Request Attributes</h3>
+<p>Attributes are values set by middleware during the request lifecycle. Route parameters are stored as attributes, and the authentication middleware stores the user context as an attribute.</p>
+
+<pre><code>$id          = $this-&gt;request-&gt;getAttribute('id');           // route parameter
+$userContext = $this-&gt;request-&gt;getAttribute('userContext');   // set by auth middleware</code></pre>
+
+<h2>Complete API Controller Example</h2>
+<p>Here is a full CRUD controller for a user resource, demonstrating constructor injection, all response helpers, route parameters, and request body access:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Controllers;
+
+use App\Services\UserServiceInterface;
+use Melodic\Controller\ApiController;
+use Melodic\Http\JsonResponse;
+use Melodic\Http\Response;
+
+class UserApiController extends ApiController
+{
+    public function __construct(
+        private readonly UserServiceInterface $userService,
+    ) {}
+
+    public function index(): JsonResponse
+    {
+        $users = $this-&gt;userService-&gt;getAll();
+
+        return $this-&gt;json(array_map(
+            fn($user) =&gt; $user-&gt;toArray(),
+            $users,
+        ));
+    }
+
+    public function show(string $id): JsonResponse
+    {
+        $user = $this-&gt;userService-&gt;getById((int) $id);
+
+        if ($user === null) {
+            return $this-&gt;notFound(['error' =&gt; 'User not found']);
+        }
+
+        return $this-&gt;json($user-&gt;toArray());
+    }
+
+    public function store(): JsonResponse
+    {
+        $username = $this-&gt;request-&gt;body('username');
+        $email    = $this-&gt;request-&gt;body('email');
+
+        if ($username === null || $email === null) {
+            return $this-&gt;badRequest([
+                'error' =&gt; 'Username and email are required',
+            ]);
+        }
+
+        $id   = $this-&gt;userService-&gt;create($username, $email);
+        $user = $this-&gt;userService-&gt;getById($id);
+
+        return $this-&gt;created($user-&gt;toArray(), "/api/users/{$id}");
+    }
+
+    public function update(string $id): JsonResponse
+    {
+        $user = $this-&gt;userService-&gt;getById((int) $id);
+
+        if ($user === null) {
+            return $this-&gt;notFound(['error' =&gt; 'User not found']);
+        }
+
+        $body = $this-&gt;request-&gt;body();
+        $this-&gt;userService-&gt;update((int) $id, $body);
+
+        $updated = $this-&gt;userService-&gt;getById((int) $id);
+        return $this-&gt;json($updated-&gt;toArray());
+    }
+
+    public function destroy(string $id): Response
+    {
+        $deleted = $this-&gt;userService-&gt;delete((int) $id);
+
+        if (!$deleted) {
+            return $this-&gt;notFound(['error' =&gt; 'User not found']);
+        }
+
+        return $this-&gt;noContent();
+    }
+}</code></pre>
+
+<p>Register it with a single line:</p>
+
+<pre><code>$router-&gt;apiResource('/api/users', UserApiController::class);</code></pre>
+
+<h2>Complete MVC Controller Example</h2>
+<p>Here is a controller that renders views with layouts, uses the viewBag, and demonstrates constructor injection alongside the ViewEngine:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Controllers;
+
+use App\Services\ArticleServiceInterface;
+use Melodic\Controller\MvcController;
+use Melodic\Http\Response;
+use Melodic\View\ViewEngine;
+
+class ArticleController extends MvcController
+{
+    public function __construct(
+        ViewEngine $viewEngine,
+        private readonly ArticleServiceInterface $articleService,
+    ) {
+        parent::__construct($viewEngine);
+    }
+
+    public function index(): Response
+    {
+        $this-&gt;viewBag-&gt;title = 'Articles';
+        $this-&gt;viewBag-&gt;userContext = $this-&gt;getUserContext();
+        $this-&gt;setLayout('layouts/main');
+
+        $articles = $this-&gt;articleService-&gt;getAll();
+
+        return $this-&gt;view('articles/index', [
+            'articles' =&gt; $articles,
+        ]);
+    }
+
+    public function show(string $id): Response
+    {
+        $article = $this-&gt;articleService-&gt;getById((int) $id);
+
+        if ($article === null) {
+            return $this-&gt;notFound();
+        }
+
+        $this-&gt;viewBag-&gt;title = $article-&gt;title;
+        $this-&gt;viewBag-&gt;userContext = $this-&gt;getUserContext();
+        $this-&gt;setLayout('layouts/main');
+
+        return $this-&gt;view('articles/show', [
+            'article' =&gt; $article,
+        ]);
+    }
+}</code></pre>
+
+<p>And the corresponding view template:</p>
+
+<pre><code>&lt;!-- views/articles/index.phtml --&gt;
+&lt;h1&gt;Articles&lt;/h1&gt;
+
+&lt;?php if (empty($articles)): ?&gt;
+    &lt;p&gt;No articles found.&lt;/p&gt;
+&lt;?php else: ?&gt;
+    &lt;ul&gt;
+        &lt;?php foreach ($articles as $article): ?&gt;
+            &lt;li&gt;
+                &lt;a href="/articles/&lt;?= $article-&gt;id ?&gt;"&gt;
+                    &lt;?= htmlspecialchars($article-&gt;title) ?&gt;
+                &lt;/a&gt;
+            &lt;/li&gt;
+        &lt;?php endforeach; ?&gt;
+    &lt;/ul&gt;
+&lt;?php endif; ?&gt;
+
+&lt;?php $this-&gt;beginSection('scripts') ?&gt;
+&lt;script src="/js/articles.js"&gt;&lt;/script&gt;
+&lt;?php $this-&gt;endSection() ?&gt;</code></pre>
+
+<p>Register the routes:</p>
+
+<pre><code>$router-&gt;get('/articles', ArticleController::class, 'index');
+$router-&gt;get('/articles/{id}', ArticleController::class, 'show');</code></pre>

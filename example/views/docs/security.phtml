@@ -1,0 +1,637 @@
+<h1>Security &amp; Authentication</h1>
+<p>Melodic provides a complete authentication and authorization system supporting three provider types &mdash; OIDC, OAuth2, and local username/password &mdash; and three middleware types for protecting routes. Everything is JWT-based: external providers issue or produce tokens, and the framework validates them on every request.</p>
+
+<h2>SecurityServiceProvider</h2>
+<p>All security services are wired through a single service provider. Register it in your application bootstrap:</p>
+
+<pre><code>use Melodic\Security\SecurityServiceProvider;
+
+$app-&gt;register(new SecurityServiceProvider());</code></pre>
+
+<p>This automatically registers the following in the DI container:</p>
+
+<ul>
+    <li><strong>AuthConfig</strong> &mdash; parsed from your <code>auth</code> configuration section</li>
+    <li><strong>SessionManager</strong> &mdash; manages session state for OAuth flows and redirect tracking</li>
+    <li><strong>AuthProviderRegistry</strong> &mdash; holds all configured auth providers (OIDC, OAuth2, Local)</li>
+    <li><strong>JwtValidator</strong> &mdash; validates JWT tokens from any source (local or external)</li>
+    <li><strong>AuthLoginRendererInterface</strong> &mdash; renders the default login page</li>
+    <li><strong>AuthCallbackMiddleware</strong> &mdash; handles login, callback, and logout routes</li>
+    <li><strong>ApiAuthenticationMiddleware</strong> &mdash; Bearer token authentication for API routes</li>
+    <li><strong>WebAuthenticationMiddleware</strong> &mdash; cookie-based authentication for web pages</li>
+</ul>
+
+<div class="callout callout-info">
+    <p><strong>Note:</strong> The provider reads all configuration from the <code>auth</code> key in your JSON config file. Make sure <code>loadConfig()</code> is called before <code>register()</code>.</p>
+</div>
+
+<h2>Authentication Middleware</h2>
+<p>Melodic ships with three authentication middleware classes, each designed for a different use case. All three set a <code>UserContext</code> on the request so controllers can access the authenticated user.</p>
+
+<h3>ApiAuthenticationMiddleware</h3>
+<p>Use this for API routes that return JSON responses.</p>
+
+<ul>
+    <li>Reads the JWT from the <code>Authorization: Bearer &lt;token&gt;</code> header</li>
+    <li>Valid token &rarr; sets <code>UserContext</code> on the request, continues to handler</li>
+    <li>Invalid or missing token &rarr; returns a <code>401 JSON</code> response immediately</li>
+    <li>If API auth is disabled (<code>auth.api.enabled = false</code>), sets an anonymous <code>UserContext</code> and continues</li>
+</ul>
+
+<pre><code>use Melodic\Security\ApiAuthenticationMiddleware;
+
+$router-&gt;group('/api', function (Router $router) {
+    $router-&gt;apiResource('/users', UserApiController::class);
+}, middleware: [ApiAuthenticationMiddleware::class]);</code></pre>
+
+<h3>WebAuthenticationMiddleware</h3>
+<p>Use this for protected web pages that require a logged-in user.</p>
+
+<ul>
+    <li>Reads the JWT from the auth cookie (default name: <code>melodic_auth</code>)</li>
+    <li>Valid token &rarr; sets <code>UserContext</code> on the request, continues to handler</li>
+    <li>Invalid or missing token &rarr; saves the current URL in the session for post-login redirect, then redirects to the login page</li>
+    <li>If web auth is disabled (<code>auth.web.enabled = false</code>), sets an anonymous <code>UserContext</code> and continues</li>
+</ul>
+
+<pre><code>use Melodic\Security\WebAuthenticationMiddleware;
+
+$router-&gt;group('/admin', function (Router $router) {
+    $router-&gt;get('/dashboard', AdminController::class, 'index');
+}, middleware: [WebAuthenticationMiddleware::class]);</code></pre>
+
+<h3>OptionalWebAuthMiddleware</h3>
+<p>Use this for public pages that benefit from knowing the user but do not require authentication.</p>
+
+<ul>
+    <li>Reads the JWT from the auth cookie</li>
+    <li>Valid token &rarr; sets <code>UserContext</code> with the authenticated user</li>
+    <li>Invalid or missing token &rarr; sets an anonymous <code>UserContext</code> (no redirect, no error)</li>
+</ul>
+
+<pre><code>use Melodic\Security\OptionalWebAuthMiddleware;
+
+$router-&gt;group('', function (Router $router) {
+    $router-&gt;get('/', HomeController::class, 'index');
+    $router-&gt;get('/about', HomeController::class, 'about');
+}, middleware: [OptionalWebAuthMiddleware::class]);</code></pre>
+
+<div class="callout callout-tip">
+    <p><strong>Tip:</strong> Use <code>OptionalWebAuthMiddleware</code> on public pages like your home page so you can display a personalized greeting or a "Sign In" link depending on whether the user is logged in.</p>
+</div>
+
+<h3>Middleware Comparison</h3>
+
+<table>
+    <tr>
+        <th>Middleware</th>
+        <th>Token Source</th>
+        <th>Missing/Invalid Token</th>
+        <th>Use Case</th>
+    </tr>
+    <tr>
+        <td><code>ApiAuthenticationMiddleware</code></td>
+        <td>Authorization header</td>
+        <td>401 JSON response</td>
+        <td>API endpoints</td>
+    </tr>
+    <tr>
+        <td><code>WebAuthenticationMiddleware</code></td>
+        <td>Cookie</td>
+        <td>Redirect to login page</td>
+        <td>Protected web pages</td>
+    </tr>
+    <tr>
+        <td><code>OptionalWebAuthMiddleware</code></td>
+        <td>Cookie</td>
+        <td>Anonymous context (no redirect)</td>
+        <td>Public pages with optional personalization</td>
+    </tr>
+</table>
+
+<h2>Auth Providers</h2>
+<p>Melodic supports three provider types, each configured in the <code>auth.providers</code> section of your config file. Multiple providers can be registered simultaneously &mdash; the login page will display buttons for each external provider and a username/password form for the local provider.</p>
+
+<h3>OIDC (OpenID Connect)</h3>
+<p>The OIDC provider is the most automated option. It uses <a href="https://openid.net/specs/openid-connect-discovery-1_0.html">OIDC Discovery</a> to automatically locate authorization, token, and JWKS endpoints from a single discovery URL.</p>
+
+<p><strong>Configuration properties:</strong></p>
+<table>
+    <tr><th>Property</th><th>Description</th></tr>
+    <tr><td><code>type</code></td><td><code>"oidc"</code></td></tr>
+    <tr><td><code>label</code></td><td>Button label on the login page (e.g., "Sign in with Google")</td></tr>
+    <tr><td><code>discoveryUrl</code></td><td>OIDC discovery document URL (the <code>.well-known/openid-configuration</code> endpoint)</td></tr>
+    <tr><td><code>clientId</code></td><td>OAuth client ID from your identity provider</td></tr>
+    <tr><td><code>clientSecret</code></td><td>OAuth client secret (optional for public clients using PKCE)</td></tr>
+    <tr><td><code>redirectUri</code></td><td>Callback URL registered with the provider (must match <code>/auth/callback/{name}</code>)</td></tr>
+    <tr><td><code>scopes</code></td><td>Space-separated scopes (defaults to <code>"openid profile email"</code>)</td></tr>
+</table>
+
+<p><strong>How it works:</strong></p>
+<ol>
+    <li>On login, the framework fetches the discovery document to find the authorization endpoint</li>
+    <li>Generates a PKCE code verifier and challenge for security</li>
+    <li>Redirects the user to the provider's authorization endpoint</li>
+    <li>On callback, exchanges the authorization code for tokens (using the code verifier)</li>
+    <li>Validates the ID token using the provider's JWKS (JSON Web Key Set)</li>
+    <li>Sets the validated claims as the user's identity</li>
+</ol>
+
+<div class="callout callout-info">
+    <p><strong>Note:</strong> OIDC discovery results are cached to disk to avoid repeated HTTP requests. The cache directory is <code>sys_get_temp_dir() . '/melodic_oidc_cache'</code>.</p>
+</div>
+
+<p><strong>Compatible providers:</strong> Google, Azure AD, Auth0, Okta, Keycloak, and any provider that supports OIDC Discovery.</p>
+
+<h3>OAuth2</h3>
+<p>The OAuth2 provider supports generic OAuth2 flows where OIDC Discovery is not available. You specify the endpoints manually, and the framework fetches user info from a separate endpoint after obtaining an access token.</p>
+
+<p><strong>Configuration properties:</strong></p>
+<table>
+    <tr><th>Property</th><th>Description</th></tr>
+    <tr><td><code>type</code></td><td><code>"oauth2"</code></td></tr>
+    <tr><td><code>label</code></td><td>Button label on the login page</td></tr>
+    <tr><td><code>authorizeUrl</code></td><td>Provider's authorization endpoint</td></tr>
+    <tr><td><code>tokenUrl</code></td><td>Provider's token exchange endpoint</td></tr>
+    <tr><td><code>userInfoUrl</code></td><td>Endpoint that returns the user's profile (called with the access token)</td></tr>
+    <tr><td><code>clientId</code></td><td>OAuth client ID</td></tr>
+    <tr><td><code>clientSecret</code></td><td>OAuth client secret</td></tr>
+    <tr><td><code>redirectUri</code></td><td>Callback URL registered with the provider</td></tr>
+    <tr><td><code>scopes</code></td><td>Space-separated scopes</td></tr>
+    <tr><td><code>claimMap</code></td><td>Maps provider-specific field names to standard claims</td></tr>
+</table>
+
+<p><strong>How it works:</strong></p>
+<ol>
+    <li>On login, redirects to the provider's authorization URL with state parameter</li>
+    <li>On callback, exchanges the authorization code for an access token</li>
+    <li>Fetches user info from the <code>userInfoUrl</code> using the access token</li>
+    <li>Uses <code>ClaimMapper</code> to map provider-specific fields (e.g., GitHub's <code>id</code>, <code>login</code>) to standard claims (<code>sub</code>, <code>username</code>, <code>email</code>, <code>entitlements</code>)</li>
+    <li>Issues a local JWT containing the mapped claims</li>
+</ol>
+
+<p>The <code>claimMap</code> object tells the mapper which fields in the provider's response correspond to the standard claim names:</p>
+
+<pre><code>"claimMap": {
+    "sub": "id",
+    "username": "login",
+    "email": "email"
+}</code></pre>
+
+<p>If a key is not specified in the claim map, the mapper looks for the standard name (e.g., <code>sub</code>, <code>username</code>, <code>email</code>, <code>entitlements</code>) in the raw response.</p>
+
+<p><strong>Compatible providers:</strong> GitHub, GitLab, Bitbucket, and any provider with a standard OAuth2 authorization code flow.</p>
+
+<h3>Local (Username/Password)</h3>
+<p>The local provider handles traditional username and password authentication. It requires you to implement the <code>LocalAuthenticatorInterface</code> to validate credentials against your own data store.</p>
+
+<p><strong>Configuration properties:</strong></p>
+<table>
+    <tr><th>Property</th><th>Description</th></tr>
+    <tr><td><code>type</code></td><td><code>"local"</code></td></tr>
+    <tr><td><code>label</code></td><td>Submit button label (e.g., "Sign In")</td></tr>
+</table>
+
+<p><strong>Implementing the authenticator:</strong></p>
+
+<pre><code>&lt;?php
+
+use Melodic\Security\LocalAuthenticatorInterface;
+use Melodic\Security\SecurityException;
+
+class MyAuthenticator implements LocalAuthenticatorInterface
+{
+    public function __construct(
+        private readonly UserService $userService,
+    ) {}
+
+    public function authenticate(string $username, string $password): array
+    {
+        $user = $this-&gt;userService-&gt;findByEmail($username);
+
+        if ($user === null || !password_verify($password, $user-&gt;passwordHash)) {
+            throw new SecurityException('Invalid email or password.');
+        }
+
+        return [
+            'sub' =&gt; (string) $user-&gt;id,
+            'username' =&gt; $user-&gt;name,
+            'email' =&gt; $user-&gt;email,
+            'entitlements' =&gt; $user-&gt;roles,
+        ];
+    }
+}</code></pre>
+
+<p>Then bind the interface in your service registration:</p>
+
+<pre><code>$app-&gt;services(function (Container $container) {
+    $container-&gt;bind(
+        LocalAuthenticatorInterface::class,
+        MyAuthenticator::class,
+    );
+});</code></pre>
+
+<p><strong>How it works:</strong></p>
+<ol>
+    <li>The login page renders a username/password form that POSTs to <code>/auth/callback/{provider}</code></li>
+    <li>The <code>LocalAuthProvider</code> extracts the credentials from the POST body</li>
+    <li>Calls your <code>LocalAuthenticatorInterface</code> implementation to validate credentials</li>
+    <li>On success, issues a local JWT containing the returned claims</li>
+    <li>On failure, redirects back to the login page with an error message</li>
+</ol>
+
+<div class="callout callout-warning">
+    <p><strong>Important:</strong> The local provider requires a <code>local</code> signing configuration in the <code>auth</code> section. Without it, the provider cannot issue JWT tokens and will throw a <code>SecurityException</code> at startup.</p>
+</div>
+
+<h2>JWT Configuration</h2>
+<p>The <code>auth.local</code> section in your config file controls how locally-issued JWTs are signed and validated. Both the local auth provider and the OAuth2 provider use this configuration to issue tokens.</p>
+
+<table>
+    <tr><th>Property</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>signingKey</code></td><td><em>(required)</em></td><td>Secret key for HS256 signing. Minimum 32 characters recommended for security.</td></tr>
+    <tr><td><code>issuer</code></td><td><code>"melodic-app"</code></td><td>The <code>iss</code> claim in issued tokens. Also used by <code>JwtValidator</code> to identify locally-issued tokens.</td></tr>
+    <tr><td><code>audience</code></td><td><code>"melodic-app"</code></td><td>The <code>aud</code> claim in issued tokens. Validated on incoming tokens.</td></tr>
+    <tr><td><code>tokenLifetime</code></td><td><code>3600</code></td><td>Seconds until the token expires (sets the <code>exp</code> claim).</td></tr>
+    <tr><td><code>algorithm</code></td><td><code>"HS256"</code></td><td>The signing algorithm. Must be supported by the <code>firebase/php-jwt</code> library.</td></tr>
+</table>
+
+<pre><code>{
+    "auth": {
+        "local": {
+            "signingKey": "your-secret-key-at-least-32-characters-long",
+            "issuer": "my-app",
+            "audience": "my-app",
+            "tokenLifetime": 7200,
+            "algorithm": "HS256"
+        }
+    }
+}</code></pre>
+
+<div class="callout callout-warning">
+    <p><strong>Important:</strong> Use a strong, random signing key in production. Never commit your production signing key to source control. Consider loading it from an environment variable or a secrets manager.</p>
+</div>
+
+<h2>JwtValidator</h2>
+<p>The <code>JwtValidator</code> class is responsible for validating JWT tokens regardless of their origin. It uses a two-step strategy to determine how to validate each token:</p>
+
+<ol>
+    <li><strong>Peek at the issuer</strong> &mdash; decodes the token payload (without verification) to read the <code>iss</code> claim</li>
+    <li><strong>Route to the correct validator:</strong>
+        <ul>
+            <li>If the issuer matches the local <code>auth.local.issuer</code> &rarr; validates using the local signing key and algorithm, then checks the audience claim</li>
+            <li>Otherwise &rarr; tries each registered OIDC provider's JWKS (JSON Web Key Set) to find one that can validate the token</li>
+        </ul>
+    </li>
+</ol>
+
+<p>On success, the validator returns the decoded claims array. On failure, it throws a <code>SecurityException</code>.</p>
+
+<pre><code>// The validator is used internally by the authentication middleware.
+// You can also resolve it from the container if needed:
+$validator = $container-&gt;get(JwtValidator::class);
+
+try {
+    $claims = $validator-&gt;validate($token);
+    // $claims is an associative array of JWT claims
+} catch (SecurityException $e) {
+    // Token is invalid
+}</code></pre>
+
+<h2>UserContext</h2>
+<p>After authentication, the middleware places a <code>UserContext</code> on the request. Controllers access it through the <code>getUserContext()</code> method available on both <code>ApiController</code> and <code>MvcController</code>.</p>
+
+<pre><code>$userContext = $this-&gt;getUserContext();</code></pre>
+
+<p>The <code>UserContext</code> provides the following methods:</p>
+
+<table>
+    <tr><th>Method</th><th>Return Type</th><th>Description</th></tr>
+    <tr><td><code>isAuthenticated()</code></td><td><code>bool</code></td><td>Returns <code>true</code> if a valid user is present (not anonymous).</td></tr>
+    <tr><td><code>getUser()</code></td><td><code>?User</code></td><td>Returns the <code>User</code> object, or <code>null</code> if anonymous.</td></tr>
+    <tr><td><code>getUsername()</code></td><td><code>?string</code></td><td>Shortcut for <code>getUser()-&gt;username</code>.</td></tr>
+    <tr><td><code>hasEntitlement(string $entitlement)</code></td><td><code>bool</code></td><td>Checks if the user has a specific entitlement.</td></tr>
+    <tr><td><code>hasAnyEntitlement(string ...$entitlements)</code></td><td><code>bool</code></td><td>Checks if the user has at least one of the given entitlements.</td></tr>
+    <tr><td><code>getClaim(string $key)</code></td><td><code>mixed</code></td><td>Returns a raw JWT claim by key, or <code>null</code> if not present.</td></tr>
+    <tr><td><code>getClaims()</code></td><td><code>array</code></td><td>Returns all JWT claims as an associative array.</td></tr>
+</table>
+
+<p>The <code>User</code> object has four readonly properties:</p>
+
+<ul>
+    <li><code>id</code> (string) &mdash; the subject (<code>sub</code>) claim</li>
+    <li><code>username</code> (string) &mdash; display name</li>
+    <li><code>email</code> (string) &mdash; email address</li>
+    <li><code>entitlements</code> (array) &mdash; list of roles or permissions</li>
+</ul>
+
+<h3>Usage in Controllers</h3>
+
+<pre><code>&lt;?php
+
+class ProfileController extends ApiController
+{
+    public function show(): Response
+    {
+        $userContext = $this-&gt;getUserContext();
+
+        if (!$userContext-&gt;isAuthenticated()) {
+            return $this-&gt;json(['error' =&gt; 'Not logged in'], 401);
+        }
+
+        $user = $userContext-&gt;getUser();
+
+        return $this-&gt;json([
+            'id' =&gt; $user-&gt;id,
+            'username' =&gt; $user-&gt;username,
+            'email' =&gt; $user-&gt;email,
+            'isAdmin' =&gt; $userContext-&gt;hasEntitlement('admin'),
+            'provider' =&gt; $userContext-&gt;getClaim('provider'),
+        ]);
+    }
+}</code></pre>
+
+<h3>Usage in Templates</h3>
+
+<pre><code>&lt;!-- Pass userContext to viewBag in controller --&gt;
+&lt;!-- $this-&gt;viewBag-&gt;userContext = $this-&gt;getUserContext(); --&gt;
+
+&lt;?php $uc = $viewBag-&gt;userContext; ?&gt;
+&lt;?php if ($uc &amp;&amp; $uc-&gt;isAuthenticated()): ?&gt;
+    &lt;p&gt;Welcome, &lt;?= htmlspecialchars($uc-&gt;getUsername()) ?&gt;!&lt;/p&gt;
+&lt;?php else: ?&gt;
+    &lt;p&gt;&lt;a href="/auth/login"&gt;Sign in&lt;/a&gt;&lt;/p&gt;
+&lt;?php endif; ?&gt;</code></pre>
+
+<h2>AuthorizationMiddleware</h2>
+<p>After authentication establishes <em>who</em> the user is, the <code>AuthorizationMiddleware</code> checks <em>what</em> they are allowed to do. It examines the <code>UserContext</code> set by the authentication middleware.</p>
+
+<pre><code>use Melodic\Security\AuthorizationMiddleware;
+
+new AuthorizationMiddleware(
+    requiredEntitlements: ['admin'],
+    requireAuthentication: true,
+)</code></pre>
+
+<table>
+    <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>requiredEntitlements</code></td><td><code>[]</code></td><td>Array of entitlement strings. The user must have at least one of them (OR logic).</td></tr>
+    <tr><td><code>requireAuthentication</code></td><td><code>true</code></td><td>If <code>true</code>, unauthenticated requests receive a <code>401</code> response.</td></tr>
+</table>
+
+<p><strong>Behavior:</strong></p>
+<ul>
+    <li>Unauthenticated user + <code>requireAuthentication: true</code> &rarr; <code>401 JSON</code> response</li>
+    <li>Authenticated user without required entitlements &rarr; <code>403 JSON</code> response</li>
+    <li>Authenticated user with at least one required entitlement &rarr; continues to handler</li>
+</ul>
+
+<h3>Applying to Route Groups</h3>
+
+<pre><code>$router-&gt;group('/api', function (Router $router) {
+    // All routes require authentication (from ApiAuthenticationMiddleware)
+    // Admin routes additionally require the 'admin' entitlement
+    $router-&gt;group('/admin', function (Router $router) {
+        $router-&gt;get('/stats', AdminController::class, 'stats');
+        $router-&gt;delete('/users/{id}', AdminController::class, 'removeUser');
+    }, middleware: [new AuthorizationMiddleware(
+        requiredEntitlements: ['admin'],
+    )]);
+
+    $router-&gt;apiResource('/users', UserApiController::class);
+}, middleware: [ApiAuthenticationMiddleware::class]);</code></pre>
+
+<div class="callout callout-info">
+    <p><strong>Note:</strong> Always place <code>AuthorizationMiddleware</code> <em>after</em> an authentication middleware. Authorization checks the <code>UserContext</code> that authentication sets on the request. Without authentication running first, there will be no <code>UserContext</code> to check.</p>
+</div>
+
+<h2>Auth Routes</h2>
+<p>The <code>AuthCallbackMiddleware</code> intercepts specific paths and handles the entire login/callback/logout flow. These are the routes it responds to:</p>
+
+<table>
+    <tr><th>Method</th><th>Path</th><th>Action</th></tr>
+    <tr><td>GET</td><td><code>/auth/login</code></td><td>Renders the login page with provider buttons and/or local form</td></tr>
+    <tr><td>GET</td><td><code>/auth/login/{provider}</code></td><td>Initiates OAuth redirect to the named provider</td></tr>
+    <tr><td>GET</td><td><code>/auth/callback/{provider}</code></td><td>Handles OAuth callback (authorization code exchange)</td></tr>
+    <tr><td>POST</td><td><code>/auth/callback/{provider}</code></td><td>Handles local form submission (username/password)</td></tr>
+    <tr><td>GET</td><td><code>/auth/logout</code></td><td>Clears the auth cookie and redirects to <code>/</code></td></tr>
+</table>
+
+<p>On successful authentication, the middleware sets the JWT as an HTTP-only cookie and redirects the user to their original destination (saved in the session by <code>WebAuthenticationMiddleware</code>) or to the <code>postLoginRedirect</code> path (default <code>/</code>).</p>
+
+<h3>Setting Up Auth Routes</h3>
+<p>Register all auth endpoints in a route group with <code>AuthCallbackMiddleware</code>. The route actions are never reached because the middleware handles the request directly &mdash; the controller references are placeholders:</p>
+
+<pre><code>use Melodic\Security\AuthCallbackMiddleware;
+
+$router-&gt;group('/auth', function (Router $router) {
+    $router-&gt;get('/login', HomeController::class, 'index');
+    $router-&gt;get('/login/{provider}', HomeController::class, 'index');
+    $router-&gt;get('/callback/{provider}', HomeController::class, 'index');
+    $router-&gt;post('/callback/{provider}', HomeController::class, 'index');
+    $router-&gt;get('/logout', HomeController::class, 'index');
+}, middleware: [AuthCallbackMiddleware::class]);</code></pre>
+
+<div class="callout callout-tip">
+    <p><strong>Tip:</strong> The controller class referenced in the auth routes does not matter because <code>AuthCallbackMiddleware</code> intercepts the request before it reaches the controller. However, you still need valid route registrations so the router matches the paths.</p>
+</div>
+
+<h2>Login Page Customization</h2>
+<p>The default login page renderer produces a clean, centered card with provider buttons and an optional local login form. You can customize it in two ways.</p>
+
+<h3>Config-Based Styling</h3>
+<p>Add a <code>loginPage</code> object to your <code>auth</code> configuration to change colors, branding, and styles without writing any code:</p>
+
+<pre><code>{
+    "auth": {
+        "loginPage": {
+            "title": "Welcome Back",
+            "primaryColor": "#6c63ff",
+            "primaryHoverColor": "#5a52e0",
+            "backgroundColor": "#0f1117",
+            "cardBackground": "#1c2030",
+            "textColor": "#e4e4e7",
+            "subtextColor": "#8b8b9e",
+            "logoUrl": "/images/logo.png",
+            "logoAlt": "My App Logo",
+            "faviconUrl": "/favicon.ico",
+            "customCss": ".login-card { border: 1px solid #333; }"
+        }
+    }
+}</code></pre>
+
+<table>
+    <tr><th>Property</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>title</code></td><td><code>"Sign In"</code></td><td>Page heading and <code>&lt;title&gt;</code></td></tr>
+    <tr><td><code>primaryColor</code></td><td><code>"#4a90d9"</code></td><td>Submit button and focus ring color</td></tr>
+    <tr><td><code>primaryHoverColor</code></td><td><code>"#357abd"</code></td><td>Submit button hover color</td></tr>
+    <tr><td><code>backgroundColor</code></td><td><code>"#f5f5f5"</code></td><td>Page background color</td></tr>
+    <tr><td><code>cardBackground</code></td><td><code>"#ffffff"</code></td><td>Login card background color</td></tr>
+    <tr><td><code>textColor</code></td><td><code>"#333333"</code></td><td>Heading text color</td></tr>
+    <tr><td><code>subtextColor</code></td><td><code>"#555555"</code></td><td>Label text color</td></tr>
+    <tr><td><code>logoUrl</code></td><td><code>null</code></td><td>URL to a logo image displayed above the title</td></tr>
+    <tr><td><code>logoAlt</code></td><td><code>null</code></td><td>Alt text for the logo image</td></tr>
+    <tr><td><code>faviconUrl</code></td><td><code>null</code></td><td>URL for a custom favicon</td></tr>
+    <tr><td><code>customCss</code></td><td><code>null</code></td><td>Raw CSS injected into the page for additional styling</td></tr>
+</table>
+
+<h3>Custom Renderer</h3>
+<p>For complete control over the login page, implement <code>AuthLoginRendererInterface</code> and bind it in the DI container:</p>
+
+<pre><code>&lt;?php
+
+use Melodic\Security\AuthLoginRendererInterface;
+
+class MyLoginRenderer implements AuthLoginRendererInterface
+{
+    public function render(?string $error = null): string
+    {
+        // Return the full HTML for your custom login page
+        $errorHtml = $error
+            ? '&lt;div class="error"&gt;' . htmlspecialchars($error) . '&lt;/div&gt;'
+            : '';
+
+        return "&lt;!DOCTYPE html&gt;&lt;html&gt;...{$errorHtml}...&lt;/html&gt;";
+    }
+}</code></pre>
+
+<pre><code>$app-&gt;services(function (Container $container) {
+    $container-&gt;singleton(
+        AuthLoginRendererInterface::class,
+        MyLoginRenderer::class,
+    );
+});</code></pre>
+
+<div class="callout callout-info">
+    <p><strong>Note:</strong> This works because <code>$app-&gt;services()</code> runs after <code>$app-&gt;register()</code>. The <code>SecurityServiceProvider</code> registers the default renderer, and your binding replaces it. The container uses the last registered binding for each interface.</p>
+</div>
+
+<h2>Complete Provider Configuration</h2>
+<p>Here is a full configuration example with all three provider types configured together.</p>
+
+<pre><code>{
+    "auth": {
+        "api": { "enabled": true },
+        "web": { "enabled": true },
+        "loginPath": "/auth/login",
+        "callbackPath": "/auth/callback",
+        "postLoginRedirect": "/",
+        "cookieName": "melodic_auth",
+        "cookieLifetime": 3600,
+        "local": {
+            "signingKey": "your-secret-key-at-least-32-characters-long",
+            "issuer": "my-app",
+            "audience": "my-app",
+            "tokenLifetime": 3600,
+            "algorithm": "HS256"
+        },
+        "providers": {
+            "google": {
+                "type": "oidc",
+                "label": "Sign in with Google",
+                "discoveryUrl": "https://accounts.google.com/.well-known/openid-configuration",
+                "clientId": "YOUR_GOOGLE_CLIENT_ID",
+                "clientSecret": "YOUR_GOOGLE_CLIENT_SECRET",
+                "redirectUri": "https://myapp.com/auth/callback/google",
+                "scopes": "openid profile email"
+            },
+            "github": {
+                "type": "oauth2",
+                "label": "Sign in with GitHub",
+                "authorizeUrl": "https://github.com/login/oauth/authorize",
+                "tokenUrl": "https://github.com/login/oauth/access_token",
+                "userInfoUrl": "https://api.github.com/user",
+                "clientId": "YOUR_GITHUB_CLIENT_ID",
+                "clientSecret": "YOUR_GITHUB_CLIENT_SECRET",
+                "redirectUri": "https://myapp.com/auth/callback/github",
+                "scopes": "read:user user:email",
+                "claimMap": {
+                    "sub": "id",
+                    "username": "login",
+                    "email": "email"
+                }
+            },
+            "local": {
+                "type": "local",
+                "label": "Sign In"
+            }
+        },
+        "loginPage": {
+            "title": "Welcome to My App",
+            "primaryColor": "#6c63ff",
+            "logoUrl": "/images/logo.png"
+        }
+    }
+}</code></pre>
+
+<div class="callout callout-warning">
+    <p><strong>Important:</strong> The <code>local</code> signing config (<code>auth.local</code>) is required when using OAuth2 or Local providers, because both issue locally-signed JWTs. OIDC-only setups can omit it if you only validate tokens using the provider's JWKS. However, including it is recommended so the <code>JwtValidator</code> can route tokens correctly.</p>
+</div>
+
+<h2>Complete Bootstrap Example</h2>
+<p>Here is a full application bootstrap with security fully configured:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use App\Auth\MyAuthenticator;
+use Melodic\Core\Application;
+use Melodic\Http\Middleware\CorsMiddleware;
+use Melodic\Http\Middleware\JsonBodyParserMiddleware;
+use Melodic\Security\ApiAuthenticationMiddleware;
+use Melodic\Security\AuthCallbackMiddleware;
+use Melodic\Security\LocalAuthenticatorInterface;
+use Melodic\Security\OptionalWebAuthMiddleware;
+use Melodic\Security\SecurityServiceProvider;
+use Melodic\Security\WebAuthenticationMiddleware;
+
+$app = new Application(dirname(__DIR__));
+$app-&gt;loadConfig('config/config.json');
+
+// Register the security provider (reads auth config automatically)
+$app-&gt;register(new SecurityServiceProvider());
+
+// Register application services
+$app-&gt;services(function ($container) {
+    // Required for the local auth provider
+    $container-&gt;bind(
+        LocalAuthenticatorInterface::class,
+        MyAuthenticator::class,
+    );
+});
+
+// Add global middleware
+$app-&gt;addMiddleware(new CorsMiddleware($app-&gt;config('cors') ?? []));
+$app-&gt;addMiddleware(new JsonBodyParserMiddleware());
+
+// Define routes
+$app-&gt;routes(function ($router) {
+    // Public pages with optional auth
+    $router-&gt;group('', function ($router) {
+        $router-&gt;get('/', HomeController::class, 'index');
+    }, middleware: [OptionalWebAuthMiddleware::class]);
+
+    // Auth endpoints
+    $router-&gt;group('/auth', function ($router) {
+        $router-&gt;get('/login', HomeController::class, 'index');
+        $router-&gt;get('/login/{provider}', HomeController::class, 'index');
+        $router-&gt;get('/callback/{provider}', HomeController::class, 'index');
+        $router-&gt;post('/callback/{provider}', HomeController::class, 'index');
+        $router-&gt;get('/logout', HomeController::class, 'index');
+    }, middleware: [AuthCallbackMiddleware::class]);
+
+    // Protected web pages
+    $router-&gt;group('/dashboard', function ($router) {
+        $router-&gt;get('/', DashboardController::class, 'index');
+    }, middleware: [WebAuthenticationMiddleware::class]);
+
+    // API routes
+    $router-&gt;group('/api', function ($router) {
+        $router-&gt;apiResource('/users', UserApiController::class);
+    }, middleware: [ApiAuthenticationMiddleware::class]);
+});
+
+$app-&gt;run();</code></pre>

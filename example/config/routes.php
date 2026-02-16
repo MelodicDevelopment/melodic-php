@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Example\Controllers\DocsController;
 use Example\Controllers\HomeController;
 use Example\Controllers\UserApiController;
 use Melodic\Routing\Router;
@@ -15,6 +16,12 @@ return function (Router $router): void {
     $router->group('', function (Router $router) {
         $router->get('/', HomeController::class, 'index');
         $router->get('/about', HomeController::class, 'about');
+    }, middleware: [OptionalWebAuthMiddleware::class]);
+
+    // Documentation routes
+    $router->group('', function (Router $router) {
+        $router->get('/docs', DocsController::class, 'index');
+        $router->get('/docs/{page}', DocsController::class, 'show');
     }, middleware: [OptionalWebAuthMiddleware::class]);
 
     // Auth endpoints — handled by AuthCallbackMiddleware

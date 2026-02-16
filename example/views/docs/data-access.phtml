@@ -1,0 +1,511 @@
+<h1>Data Access &amp; CQRS</h1>
+<p>Melodic uses a CQRS (Command Query Responsibility Segregation) pattern for data access. Queries read data, Commands write data. Both are simple PHP classes that own their SQL and execute through DbContext. There is no mediator bus &mdash; services instantiate queries and commands directly.</p>
+
+<pre><code>Service &rarr; new Query/Command &rarr; execute(DbContext) &rarr; Result</code></pre>
+
+<h2>DbContext</h2>
+<p><code>Melodic\Data\DbContext</code> is a thin PDO wrapper that provides parameterized queries, model hydration, and transaction support. It implements <code>DbContextInterface</code> for easy mocking and DI binding.</p>
+
+<h3>Constructor</h3>
+<pre><code>public function __construct(
+    PDO|string $dsn,
+    ?string $username = null,
+    ?string $password = null,
+    array $options = [],
+)</code></pre>
+
+<p>Accepts either a <code>PDO</code> instance you have already configured, or a DSN connection string. When you pass a DSN string, DbContext creates the PDO connection for you and automatically enables exception error mode and <code>FETCH_ASSOC</code> as the default fetch mode.</p>
+
+<pre><code>// Pass an existing PDO instance
+$pdo = new PDO('sqlite:database.db');
+$context = new DbContext($pdo);
+
+// Or pass a DSN string &mdash; PDO is created automatically
+$context = new DbContext('mysql:host=localhost;dbname=myapp', 'root', 'secret');</code></pre>
+
+<h3>Methods</h3>
+<table>
+    <tr>
+        <th>Method</th>
+        <th>Returns</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>query(string $class, string $sql, array $params = [])</code></td>
+        <td><code>array</code></td>
+        <td>Execute a SELECT and return an array of hydrated model objects</td>
+    </tr>
+    <tr>
+        <td><code>queryFirst(string $class, string $sql, array $params = [])</code></td>
+        <td><code>?object</code></td>
+        <td>Execute a SELECT and return the first result as a hydrated model, or null</td>
+    </tr>
+    <tr>
+        <td><code>command(string $sql, array $params = [])</code></td>
+        <td><code>int</code></td>
+        <td>Execute INSERT, UPDATE, or DELETE and return the affected row count</td>
+    </tr>
+    <tr>
+        <td><code>scalar(string $sql, array $params = [])</code></td>
+        <td><code>mixed</code></td>
+        <td>Execute a SELECT and return the first column of the first row</td>
+    </tr>
+    <tr>
+        <td><code>transaction(callable $callback)</code></td>
+        <td><code>mixed</code></td>
+        <td>Wrap a callback in beginTransaction/commit with auto-rollback on exception</td>
+    </tr>
+    <tr>
+        <td><code>lastInsertId()</code></td>
+        <td><code>int</code></td>
+        <td>Get the last auto-increment ID after an INSERT</td>
+    </tr>
+</table>
+
+<h3>Usage Examples</h3>
+<pre><code>// Fetch all users as UserModel objects
+$users = $context-&gt;query(UserModel::class, 'SELECT id, username, email FROM users');
+
+// Fetch a single user by ID
+$user = $context-&gt;queryFirst(
+    UserModel::class,
+    'SELECT id, username, email FROM users WHERE id = :id',
+    ['id' =&gt; 42]
+);
+
+// Insert a new row
+$affected = $context-&gt;command(
+    'INSERT INTO users (username, email, created_at) VALUES (:username, :email, :createdAt)',
+    ['username' =&gt; 'alice', 'email' =&gt; 'alice@example.com', 'createdAt' =&gt; date('Y-m-d H:i:s')]
+);
+
+// Get a scalar count
+$count = $context-&gt;scalar('SELECT COUNT(*) FROM users');
+
+// Get last inserted ID
+$id = $context-&gt;lastInsertId();</code></pre>
+
+<h2>Model Hydration</h2>
+<p>When you call <code>query()</code> or <code>queryFirst()</code>, DbContext creates model instances without calling the constructor and maps each column in the result set to a property of the same name on the target class.</p>
+
+<ul>
+    <li>Uses <code>ReflectionClass::newInstanceWithoutConstructor()</code> to create the instance</li>
+    <li>Maps column names to property names directly &mdash; the column name must match the property name</li>
+    <li>Works with <strong>public</strong>, <strong>protected</strong>, and <strong>private</strong> properties (uses <code>setAccessible(true)</code>)</li>
+    <li>Columns with no matching property are silently ignored</li>
+</ul>
+
+<div class="callout callout-tip">
+    <p><strong>Tip:</strong> Use SQL column aliases to map snake_case database columns to camelCase PHP properties. For example, <code>SELECT created_at AS createdAt FROM users</code> will populate a <code>createdAt</code> property.</p>
+</div>
+
+<h2>QueryInterface</h2>
+<p><code>Melodic\Data\QueryInterface</code> defines the contract for read operations &mdash; SELECT queries that return data.</p>
+
+<pre><code>interface QueryInterface
+{
+    public function getSql(): string;
+
+    public function execute(DbContextInterface $context): mixed;
+}</code></pre>
+
+<ul>
+    <li><code>getSql()</code> &mdash; returns the SQL statement (useful for logging and debugging)</li>
+    <li><code>execute()</code> &mdash; runs the query against a DbContext and returns the result</li>
+    <li>The return type of <code>execute()</code> is <code>mixed</code> &mdash; your implementations can return a model, an array of models, a scalar value, or null</li>
+</ul>
+
+<h2>CommandInterface</h2>
+<p><code>Melodic\Data\CommandInterface</code> defines the contract for write operations &mdash; INSERT, UPDATE, and DELETE statements.</p>
+
+<pre><code>interface CommandInterface
+{
+    public function getSql(): string;
+
+    public function execute(DbContextInterface $context): int;
+}</code></pre>
+
+<ul>
+    <li><code>getSql()</code> &mdash; returns the SQL statement</li>
+    <li><code>execute()</code> &mdash; runs the command against a DbContext and returns the number of affected rows</li>
+</ul>
+
+<div class="callout callout-info">
+    <p><strong>Key difference:</strong> Queries return data (<code>mixed</code>). Commands return an affected row count (<code>int</code>). This separation makes the intent of each class immediately clear.</p>
+</div>
+
+<h2>Creating a Query</h2>
+<p>A query class takes its filtering parameters in the constructor, builds the SQL, and executes through the DbContext. Here are several common patterns.</p>
+
+<h3>Get All Records</h3>
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Queries;
+
+use App\Models\UserModel;
+use Melodic\Data\DbContextInterface;
+use Melodic\Data\QueryInterface;
+
+class GetAllUsersQuery implements QueryInterface
+{
+    private readonly string $sql;
+
+    public function __construct()
+    {
+        $this-&gt;sql = "SELECT id, username, email, created_at AS createdAt
+                       FROM users ORDER BY id";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    /**
+     * @return UserModel[]
+     */
+    public function execute(DbContextInterface $context): array
+    {
+        return $context-&gt;query(UserModel::class, $this-&gt;sql);
+    }
+}</code></pre>
+
+<h3>Get by ID</h3>
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Queries;
+
+use App\Models\UserModel;
+use Melodic\Data\DbContextInterface;
+use Melodic\Data\QueryInterface;
+
+class GetUserByIdQuery implements QueryInterface
+{
+    private readonly string $sql;
+
+    public function __construct(
+        private readonly int $id,
+    ) {
+        $this-&gt;sql = "SELECT id, username, email, created_at AS createdAt
+                       FROM users WHERE id = :id";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    public function execute(DbContextInterface $context): ?UserModel
+    {
+        return $context-&gt;queryFirst(UserModel::class, $this-&gt;sql, ['id' =&gt; $this-&gt;id]);
+    }
+}</code></pre>
+
+<h3>Get with Filters</h3>
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Queries;
+
+use App\Models\UserModel;
+use Melodic\Data\DbContextInterface;
+use Melodic\Data\QueryInterface;
+
+class SearchUsersQuery implements QueryInterface
+{
+    private readonly string $sql;
+
+    public function __construct(
+        private readonly string $search,
+        private readonly int $limit = 25,
+        private readonly int $offset = 0,
+    ) {
+        $this-&gt;sql = "SELECT id, username, email, created_at AS createdAt
+                       FROM users
+                       WHERE username LIKE :search OR email LIKE :search
+                       ORDER BY username
+                       LIMIT :limit OFFSET :offset";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    /**
+     * @return UserModel[]
+     */
+    public function execute(DbContextInterface $context): array
+    {
+        return $context-&gt;query(UserModel::class, $this-&gt;sql, [
+            'search' =&gt; '%' . $this-&gt;search . '%',
+            'limit'  =&gt; $this-&gt;limit,
+            'offset' =&gt; $this-&gt;offset,
+        ]);
+    }
+}</code></pre>
+
+<h3>Scalar Query</h3>
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Queries;
+
+use Melodic\Data\DbContextInterface;
+use Melodic\Data\QueryInterface;
+
+class GetUserCountQuery implements QueryInterface
+{
+    private readonly string $sql;
+
+    public function __construct()
+    {
+        $this-&gt;sql = "SELECT COUNT(*) FROM users";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    public function execute(DbContextInterface $context): int
+    {
+        return (int) $context-&gt;scalar($this-&gt;sql);
+    }
+}</code></pre>
+
+<h2>Creating a Command</h2>
+<p>A command class takes the data it needs as constructor parameters, builds the SQL, and executes through the DbContext. Commands always return the number of affected rows.</p>
+
+<h3>Insert</h3>
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Commands;
+
+use Melodic\Data\CommandInterface;
+use Melodic\Data\DbContextInterface;
+
+class CreateUserCommand implements CommandInterface
+{
+    private readonly string $sql;
+
+    public function __construct(
+        private readonly string $username,
+        private readonly string $email,
+    ) {
+        $this-&gt;sql = "INSERT INTO users (username, email, created_at)
+                       VALUES (:username, :email, :createdAt)";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    public function execute(DbContextInterface $context): int
+    {
+        return $context-&gt;command($this-&gt;sql, [
+            'username'  =&gt; $this-&gt;username,
+            'email'     =&gt; $this-&gt;email,
+            'createdAt' =&gt; date('Y-m-d H:i:s'),
+        ]);
+    }
+}</code></pre>
+
+<h3>Update</h3>
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Commands;
+
+use Melodic\Data\CommandInterface;
+use Melodic\Data\DbContextInterface;
+
+class UpdateUserEmailCommand implements CommandInterface
+{
+    private readonly string $sql;
+
+    public function __construct(
+        private readonly int $id,
+        private readonly string $email,
+    ) {
+        $this-&gt;sql = "UPDATE users SET email = :email WHERE id = :id";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    public function execute(DbContextInterface $context): int
+    {
+        return $context-&gt;command($this-&gt;sql, [
+            'id'    =&gt; $this-&gt;id,
+            'email' =&gt; $this-&gt;email,
+        ]);
+    }
+}</code></pre>
+
+<h3>Delete</h3>
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Commands;
+
+use Melodic\Data\CommandInterface;
+use Melodic\Data\DbContextInterface;
+
+class DeleteUserCommand implements CommandInterface
+{
+    private readonly string $sql;
+
+    public function __construct(
+        private readonly int $id,
+    ) {
+        $this-&gt;sql = "DELETE FROM users WHERE id = :id";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    public function execute(DbContextInterface $context): int
+    {
+        return $context-&gt;command($this-&gt;sql, ['id' =&gt; $this-&gt;id]);
+    }
+}</code></pre>
+
+<h2>Model</h2>
+<p><code>Melodic\Data\Model</code> is a lightweight base class for your data transfer objects. It provides convenience methods for creating instances from arrays and converting them back.</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+use Melodic\Data\Model;
+
+class UserModel extends Model
+{
+    public int $id;
+    public string $username;
+    public string $email;
+    public string $createdAt;
+}</code></pre>
+
+<h3>Methods</h3>
+<table>
+    <tr>
+        <th>Method</th>
+        <th>Returns</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>static fromArray(array $data)</code></td>
+        <td><code>static</code></td>
+        <td>Create an instance from an associative array, mapping keys to properties via reflection</td>
+    </tr>
+    <tr>
+        <td><code>toArray()</code></td>
+        <td><code>array</code></td>
+        <td>Convert all initialized public properties to an associative array</td>
+    </tr>
+</table>
+
+<pre><code>// Create from an array (e.g., from request body)
+$user = UserModel::fromArray([
+    'id'        =&gt; 1,
+    'username'  =&gt; 'alice',
+    'email'     =&gt; 'alice@example.com',
+    'createdAt' =&gt; '2025-01-01 00:00:00',
+]);
+
+// Convert back to an array (e.g., for JSON response)
+$data = $user-&gt;toArray();
+// ['id' =&gt; 1, 'username' =&gt; 'alice', 'email' =&gt; 'alice@example.com', 'createdAt' =&gt; '2025-01-01 00:00:00']</code></pre>
+
+<div class="callout callout-info">
+    <p><strong>Column mapping:</strong> Database columns are mapped to property names by exact match. If your database uses <code>snake_case</code> column names like <code>created_at</code>, alias them in your SQL to match your camelCase property names: <code>SELECT created_at AS createdAt FROM users</code>.</p>
+</div>
+
+<div class="callout callout-tip">
+    <p><strong>Tip:</strong> <code>toArray()</code> only includes <strong>public</strong> properties that have been initialized. Uninitialized properties (those not yet assigned a value) are excluded, which prevents errors with typed properties that have no default.</p>
+</div>
+
+<h2>Transactions</h2>
+<p>Use <code>transaction()</code> to wrap multiple commands in a single atomic operation. If the callback throws an exception, the transaction is automatically rolled back. Otherwise, it is committed.</p>
+
+<pre><code>$result = $context-&gt;transaction(function (DbContextInterface $ctx) {
+    // Create the user
+    $ctx-&gt;command(
+        'INSERT INTO users (username, email, created_at) VALUES (:username, :email, :createdAt)',
+        ['username' =&gt; 'alice', 'email' =&gt; 'alice@example.com', 'createdAt' =&gt; date('Y-m-d H:i:s')]
+    );
+
+    $userId = $ctx-&gt;lastInsertId();
+
+    // Assign the default role
+    $ctx-&gt;command(
+        'INSERT INTO user_roles (user_id, role_id) VALUES (:userId, :roleId)',
+        ['userId' =&gt; $userId, 'roleId' =&gt; 1]
+    );
+
+    return $userId;
+});
+// $result is the user ID &mdash; both inserts succeeded or neither did</code></pre>
+
+<div class="callout callout-warning">
+    <p><strong>Warning:</strong> The DbContext instance passed to the callback (<code>$ctx</code>) is the same DbContext that owns the transaction. Do not create a new DbContext inside the callback &mdash; use the one provided.</p>
+</div>
+
+<p>You can also use transactions within a service method by calling <code>$this-&gt;context-&gt;transaction()</code>:</p>
+
+<pre><code>class UserService extends Service
+{
+    public function createWithRole(string $username, string $email, int $roleId): int
+    {
+        return $this-&gt;context-&gt;transaction(function (DbContextInterface $ctx) use ($username, $email, $roleId) {
+            (new CreateUserCommand($username, $email))-&gt;execute($ctx);
+            $userId = $ctx-&gt;lastInsertId();
+            (new AssignRoleCommand($userId, $roleId))-&gt;execute($ctx);
+
+            return $userId;
+        });
+    }
+}</code></pre>
+
+<h2>Registering DbContext</h2>
+<p>Register <code>DbContextInterface</code> as a singleton in the DI container so the same instance is shared across all services within a request.</p>
+
+<pre><code>$app-&gt;services(function ($container) {
+    $container-&gt;singleton(DbContextInterface::class, function () {
+        $pdo = new PDO('sqlite:database.db');
+        return new DbContext($pdo);
+    });
+});</code></pre>
+
+<p>For a MySQL or PostgreSQL connection:</p>
+
+<pre><code>$container-&gt;singleton(DbContextInterface::class, function () use ($app) {
+    return new DbContext(
+        $app-&gt;config('database.dsn'),      // 'mysql:host=localhost;dbname=myapp'
+        $app-&gt;config('database.username'),  // 'root'
+        $app-&gt;config('database.password'),  // 'secret'
+    );
+});</code></pre>
+
+<div class="callout callout-tip">
+    <p><strong>Tip:</strong> Registering as a singleton ensures that all services share the same PDO connection and that transactions work correctly across multiple service calls within a single request.</p>
+</div>

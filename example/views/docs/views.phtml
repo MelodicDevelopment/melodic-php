@@ -1,0 +1,427 @@
+<h1>Views &amp; Templates</h1>
+<p>Melodic includes a lightweight template engine for rendering HTML pages. Templates are plain PHP files with a <code>.phtml</code> extension, and the engine provides layouts, sections, and a dynamic view bag &mdash; everything you need for server-rendered pages without the overhead of a full template language.</p>
+
+<h2>ViewEngine</h2>
+<p>The <code>Melodic\View\ViewEngine</code> class is the core of the template system. It renders templates, wraps them in layouts, and manages sections.</p>
+
+<h3>Constructor</h3>
+
+<pre><code>use Melodic\View\ViewEngine;
+
+$viewEngine = new ViewEngine(string $viewsPath);</code></pre>
+
+<p>The <code>$viewsPath</code> parameter is the base directory where all template files are located. All template names passed to <code>render()</code> are resolved relative to this path.</p>
+
+<h3>Rendering</h3>
+
+<pre><code>$html = $viewEngine-&gt;render(
+    string $template,       // Template name (without .phtml extension)
+    array $data = [],       // Variables to extract into template scope
+    ?string $layout = null, // Optional layout name (without .phtml extension)
+): string;</code></pre>
+
+<p>The method resolves the template path as <code>$viewsPath/$template.phtml</code>, extracts the <code>$data</code> array into the template's variable scope, and captures the output. If a layout is specified, the rendered template output becomes the layout's body content.</p>
+
+<h3>Registering with the Container</h3>
+<p>Register the <code>ViewEngine</code> as a singleton in your application bootstrap so it is shared across all controllers:</p>
+
+<pre><code>use Melodic\View\ViewEngine;
+
+$app-&gt;services(function ($container) use ($app) {
+    $container-&gt;singleton(ViewEngine::class, function () use ($app) {
+        return new ViewEngine($app-&gt;getBasePath() . '/views');
+    });
+});</code></pre>
+
+<div class="callout callout-info">
+    <p><strong>Note:</strong> The <code>ViewEngine</code> is injected into <code>MvcController</code> via constructor injection. Once registered in the container, any controller extending <code>MvcController</code> will receive it automatically through auto-wiring.</p>
+</div>
+
+<h2>Template Files</h2>
+<p>Templates are <code>.phtml</code> files &mdash; standard PHP mixed with HTML. They are located in your views directory and organized into subdirectories by feature or page.</p>
+
+<pre><code>views/
+&boxv;&boxh;&boxh; layouts/
+&boxv;   &boxur;&boxh;&boxh; main.phtml           &larr; Layout template
+&boxv;&boxh;&boxh; home/
+&boxv;   &boxv;&boxh;&boxh; index.phtml          &larr; Home page template
+&boxv;   &boxur;&boxh;&boxh; about.phtml          &larr; About page template
+&boxur;&boxh;&boxh; users/
+    &boxv;&boxh;&boxh; list.phtml           &larr; User list template
+    &boxur;&boxh;&boxh; show.phtml           &larr; User detail template</code></pre>
+
+<h3>Data Variables</h3>
+<p>The <code>$data</code> array passed to <code>render()</code> is extracted into the template scope using PHP's <code>extract()</code>. Each array key becomes a local variable:</p>
+
+<pre><code>// In the controller
+return $this-&gt;view('users/show', [
+    'user' =&gt; $user,
+    'postCount' =&gt; 42,
+]);
+
+// In views/users/show.phtml — $user and $postCount are available
+&lt;h1&gt;&lt;?= htmlspecialchars($user-&gt;name) ?&gt;&lt;/h1&gt;
+&lt;p&gt;Posts: &lt;?= $postCount ?&gt;&lt;/p&gt;</code></pre>
+
+<h3>Using PHP in Templates</h3>
+<p>Full PHP is available inside templates. Use loops, conditionals, and function calls as needed:</p>
+
+<pre><code>&lt;ul&gt;
+    &lt;?php foreach ($users as $user): ?&gt;
+        &lt;li&gt;
+            &lt;strong&gt;&lt;?= htmlspecialchars($user-&gt;name) ?&gt;&lt;/strong&gt;
+            &amp;mdash; &lt;?= htmlspecialchars($user-&gt;email) ?&gt;
+        &lt;/li&gt;
+    &lt;?php endforeach; ?&gt;
+&lt;/ul&gt;
+
+&lt;?php if ($postCount &gt; 0): ?&gt;
+    &lt;p&gt;Showing &lt;?= $postCount ?&gt; posts.&lt;/p&gt;
+&lt;?php else: ?&gt;
+    &lt;p&gt;No posts yet.&lt;/p&gt;
+&lt;?php endif; ?&gt;</code></pre>
+
+<h3>The <code>$this</code> Variable</h3>
+<p>Inside any template, <code>$this</code> refers to the <code>ViewEngine</code> instance. This gives you access to section methods (<code>beginSection</code>, <code>endSection</code>) and, in layouts, the <code>renderBody()</code> and <code>renderSection()</code> methods.</p>
+
+<div class="callout callout-warning">
+    <p><strong>Important:</strong> Always escape user-provided data before outputting it. Use <code>htmlspecialchars($var, ENT_QUOTES, 'UTF-8')</code> to prevent XSS attacks. The short form <code>htmlspecialchars($var)</code> also works, but specifying <code>ENT_QUOTES</code> and <code>UTF-8</code> is the safest practice.</p>
+</div>
+
+<h2>Layouts</h2>
+<p>Layouts wrap your page templates with shared HTML structure &mdash; the doctype, head, navigation, footer, and other elements that repeat across pages. A layout is just another <code>.phtml</code> file that calls <code>$this-&gt;renderBody()</code> to output the page content.</p>
+
+<h3>Setting the Layout</h3>
+<p>In your controller, call <code>setLayout()</code> before returning the view. The argument is the path to the layout file relative to the views directory, without the <code>.phtml</code> extension:</p>
+
+<pre><code>class HomeController extends MvcController
+{
+    public function index(): Response
+    {
+        $this-&gt;setLayout('layouts/main');
+
+        return $this-&gt;view('home/index', [
+            'message' =&gt; 'Welcome to my app!',
+        ]);
+    }
+}</code></pre>
+
+<h3>Writing a Layout</h3>
+<p>A layout template provides the HTML shell. Use <code>$this-&gt;renderBody()</code> to insert the page template's output:</p>
+
+<pre><code>&lt;!DOCTYPE html&gt;
+&lt;html lang="en"&gt;
+&lt;head&gt;
+    &lt;meta charset="UTF-8"&gt;
+    &lt;meta name="viewport" content="width=device-width, initial-scale=1.0"&gt;
+    &lt;title&gt;&lt;?= htmlspecialchars($viewBag-&gt;title ?? 'My App') ?&gt;&lt;/title&gt;
+    &lt;link rel="stylesheet" href="/css/app.css"&gt;
+    &lt;?= $this-&gt;renderSection('head') ?&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;nav&gt;
+        &lt;a href="/"&gt;Home&lt;/a&gt;
+        &lt;a href="/about"&gt;About&lt;/a&gt;
+    &lt;/nav&gt;
+
+    &lt;main&gt;
+        &lt;?= $this-&gt;renderBody() ?&gt;
+    &lt;/main&gt;
+
+    &lt;footer&gt;
+        &lt;p&gt;&amp;copy; 2026 My App&lt;/p&gt;
+    &lt;/footer&gt;
+
+    &lt;script src="/js/app.js"&gt;&lt;/script&gt;
+    &lt;?= $this-&gt;renderSection('scripts') ?&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+<h3>How Layout Rendering Works</h3>
+<ol>
+    <li>The <code>ViewEngine</code> renders the page template first, capturing its output</li>
+    <li>The captured output is stored internally as the body content</li>
+    <li>The layout template is then rendered, with access to the same data variables</li>
+    <li>When the layout calls <code>$this-&gt;renderBody()</code>, the previously captured page output is inserted</li>
+    <li>The final combined HTML is returned as the response body</li>
+</ol>
+
+<div class="callout callout-info">
+    <p><strong>Note:</strong> Melodic supports only one level of layout. Nested layouts (a layout wrapping another layout) are not supported. If you need shared structural elements across multiple layouts, extract them into partial templates and include them with <code>include</code>.</p>
+</div>
+
+<h2>Sections</h2>
+<p>Sections allow page templates to inject content into specific slots defined in the layout. This is commonly used for page-specific CSS in the <code>&lt;head&gt;</code> or JavaScript before the closing <code>&lt;/body&gt;</code> tag.</p>
+
+<h3>Defining a Section (in the Page Template)</h3>
+<p>Use <code>$this-&gt;beginSection()</code> and <code>$this-&gt;endSection()</code> to capture a block of content:</p>
+
+<pre><code>&lt;!-- views/home/index.phtml --&gt;
+&lt;h1&gt;&lt;?= htmlspecialchars($message) ?&gt;&lt;/h1&gt;
+&lt;p&gt;This is the home page.&lt;/p&gt;
+
+&lt;?php $this-&gt;beginSection('head') ?&gt;
+    &lt;link rel="stylesheet" href="/css/home.css"&gt;
+    &lt;meta name="description" content="Home page"&gt;
+&lt;?php $this-&gt;endSection() ?&gt;
+
+&lt;?php $this-&gt;beginSection('scripts') ?&gt;
+    &lt;script src="/js/home.js"&gt;&lt;/script&gt;
+&lt;?php $this-&gt;endSection() ?&gt;</code></pre>
+
+<h3>Rendering a Section (in the Layout)</h3>
+<p>Call <code>$this-&gt;renderSection('name')</code> in your layout to output the captured content:</p>
+
+<pre><code>&lt;head&gt;
+    &lt;!-- ... standard head content ... --&gt;
+    &lt;?= $this-&gt;renderSection('head') ?&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;?= $this-&gt;renderBody() ?&gt;
+    &lt;?= $this-&gt;renderSection('scripts') ?&gt;
+&lt;/body&gt;</code></pre>
+
+<p>If a section is not defined by the page template, <code>renderSection()</code> returns an empty string &mdash; no error, no output.</p>
+
+<h3>How Sections Work Internally</h3>
+<p>Sections use PHP's output buffering:</p>
+<ol>
+    <li><code>beginSection('scripts')</code> stores the section name and calls <code>ob_start()</code></li>
+    <li>Everything output between <code>beginSection()</code> and <code>endSection()</code> is captured by the buffer</li>
+    <li><code>endSection()</code> calls <code>ob_get_clean()</code> and stores the captured content keyed by the section name</li>
+    <li>When the layout calls <code>renderSection('scripts')</code>, the stored content is returned</li>
+</ol>
+
+<h3>Common Section Patterns</h3>
+
+<table>
+    <tr><th>Section Name</th><th>Typical Usage</th><th>Layout Placement</th></tr>
+    <tr><td><code>head</code></td><td>Page-specific meta tags, stylesheets, inline CSS</td><td>Inside <code>&lt;head&gt;</code>, after common styles</td></tr>
+    <tr><td><code>scripts</code></td><td>Page-specific JavaScript files or inline scripts</td><td>Before <code>&lt;/body&gt;</code>, after common scripts</td></tr>
+</table>
+
+<h2>ViewBag</h2>
+<p>The <code>Melodic\View\ViewBag</code> is a dynamic property bag that lets you pass arbitrary key-value pairs from your controller to both the page template and the layout. It is automatically created by <code>MvcController</code> and included in the template data.</p>
+
+<h3>Setting Values (in the Controller)</h3>
+
+<pre><code>class HomeController extends MvcController
+{
+    public function index(): Response
+    {
+        $this-&gt;setLayout('layouts/main');
+
+        // Set viewBag properties — any name works
+        $this-&gt;viewBag-&gt;title = 'Home Page';
+        $this-&gt;viewBag-&gt;currentYear = date('Y');
+        $this-&gt;viewBag-&gt;userContext = $this-&gt;getUserContext();
+
+        return $this-&gt;view('home/index', [
+            'message' =&gt; 'Welcome!',
+        ]);
+    }
+}</code></pre>
+
+<h3>Reading Values (in Templates and Layouts)</h3>
+
+<pre><code>&lt;!-- In the layout --&gt;
+&lt;title&gt;&lt;?= htmlspecialchars($viewBag-&gt;title ?? 'My App') ?&gt;&lt;/title&gt;
+
+&lt;!-- In the page template --&gt;
+&lt;footer&gt;&amp;copy; &lt;?= $viewBag-&gt;currentYear ?&gt;&lt;/footer&gt;</code></pre>
+
+<h3>ViewBag API</h3>
+
+<table>
+    <tr><th>Feature</th><th>Description</th></tr>
+    <tr><td><code>$viewBag-&gt;key = 'value'</code></td><td>Set a property (uses <code>__set</code> magic method)</td></tr>
+    <tr><td><code>$viewBag-&gt;key</code></td><td>Get a property (uses <code>__get</code> magic method). Returns <code>null</code> if not set.</td></tr>
+    <tr><td><code>isset($viewBag-&gt;key)</code></td><td>Check if a property exists (uses <code>__isset</code> magic method)</td></tr>
+    <tr><td><code>$viewBag-&gt;toArray()</code></td><td>Convert all properties to an associative array</td></tr>
+</table>
+
+<div class="callout callout-tip">
+    <p><strong>Tip:</strong> Accessing an undefined property on the ViewBag returns <code>null</code> rather than throwing an error. Use the null coalescing operator for defaults: <code>$viewBag-&gt;title ?? 'Untitled'</code>.</p>
+</div>
+
+<h2>MvcController View Methods</h2>
+<p>The <code>Melodic\Controller\MvcController</code> base class provides the methods that tie the template system together. Any controller that renders HTML views should extend this class.</p>
+
+<table>
+    <tr><th>Method</th><th>Description</th></tr>
+    <tr>
+        <td><code>view(string $template, array $data = []): Response</code></td>
+        <td>Renders the named template (relative to the views directory, without <code>.phtml</code>), wraps it in the current layout if set, and returns a <code>200 HTML Response</code>. The <code>$viewBag</code> is automatically included in the data array.</td>
+    </tr>
+    <tr>
+        <td><code>setLayout(string $layout): void</code></td>
+        <td>Sets the layout template to wrap page output. Pass the path relative to the views directory, without <code>.phtml</code> (e.g., <code>'layouts/main'</code>).</td>
+    </tr>
+    <tr>
+        <td><code>viewBag(): ViewBag</code></td>
+        <td>Returns the <code>ViewBag</code> instance. You can also access it directly via the <code>$this-&gt;viewBag</code> property.</td>
+    </tr>
+    <tr>
+        <td><code>getUserContext(): ?UserContextInterface</code></td>
+        <td>Returns the <code>UserContext</code> from the request (set by authentication middleware). Returns <code>null</code> if no authentication middleware ran.</td>
+    </tr>
+</table>
+
+<p>The <code>view()</code> method automatically injects the <code>ViewBag</code> into the template data as the <code>$viewBag</code> variable. This means the ViewBag is accessible in both the page template and the layout without any extra work.</p>
+
+<h2>Complete Example</h2>
+<p>Here is a full example showing a controller, layout, and page template working together with sections and the ViewBag.</p>
+
+<h3>Controller</h3>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Controllers;
+
+use Melodic\Controller\MvcController;
+use Melodic\Http\Response;
+
+class HomeController extends MvcController
+{
+    public function index(): Response
+    {
+        $this-&gt;setLayout('layouts/main');
+
+        $this-&gt;viewBag-&gt;title = 'Home';
+        $this-&gt;viewBag-&gt;userContext = $this-&gt;getUserContext();
+
+        return $this-&gt;view('home/index', [
+            'heading' =&gt; 'Welcome to My App',
+            'features' =&gt; ['Fast', 'Secure', 'Simple'],
+        ]);
+    }
+}</code></pre>
+
+<h3>Layout &mdash; views/layouts/main.phtml</h3>
+
+<pre><code>&lt;!DOCTYPE html&gt;
+&lt;html lang="en"&gt;
+&lt;head&gt;
+    &lt;meta charset="UTF-8"&gt;
+    &lt;meta name="viewport" content="width=device-width, initial-scale=1.0"&gt;
+    &lt;title&gt;&lt;?= htmlspecialchars($viewBag-&gt;title ?? 'My App') ?&gt;&lt;/title&gt;
+    &lt;link rel="stylesheet" href="/css/app.css"&gt;
+    &lt;?= $this-&gt;renderSection('head') ?&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;header&gt;
+        &lt;nav&gt;
+            &lt;a href="/"&gt;Home&lt;/a&gt;
+            &lt;a href="/about"&gt;About&lt;/a&gt;
+            &lt;?php $uc = $viewBag-&gt;userContext; ?&gt;
+            &lt;?php if ($uc &amp;&amp; $uc-&gt;isAuthenticated()): ?&gt;
+                &lt;span&gt;&lt;?= htmlspecialchars($uc-&gt;getUsername()) ?&gt;&lt;/span&gt;
+                &lt;a href="/auth/logout"&gt;Logout&lt;/a&gt;
+            &lt;?php else: ?&gt;
+                &lt;a href="/auth/login"&gt;Sign In&lt;/a&gt;
+            &lt;?php endif; ?&gt;
+        &lt;/nav&gt;
+    &lt;/header&gt;
+
+    &lt;main&gt;
+        &lt;?= $this-&gt;renderBody() ?&gt;
+    &lt;/main&gt;
+
+    &lt;footer&gt;
+        &lt;p&gt;&amp;copy; 2026 My App&lt;/p&gt;
+    &lt;/footer&gt;
+
+    &lt;script src="/js/app.js"&gt;&lt;/script&gt;
+    &lt;?= $this-&gt;renderSection('scripts') ?&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+<h3>Page Template &mdash; views/home/index.phtml</h3>
+
+<pre><code>&lt;h1&gt;&lt;?= htmlspecialchars($heading) ?&gt;&lt;/h1&gt;
+
+&lt;ul&gt;
+    &lt;?php foreach ($features as $feature): ?&gt;
+        &lt;li&gt;&lt;?= htmlspecialchars($feature) ?&gt;&lt;/li&gt;
+    &lt;?php endforeach; ?&gt;
+&lt;/ul&gt;
+
+&lt;?php $this-&gt;beginSection('head') ?&gt;
+    &lt;meta name="description" content="Welcome to My App"&gt;
+    &lt;link rel="stylesheet" href="/css/home.css"&gt;
+&lt;?php $this-&gt;endSection() ?&gt;
+
+&lt;?php $this-&gt;beginSection('scripts') ?&gt;
+    &lt;script src="/js/home.js"&gt;&lt;/script&gt;
+    &lt;script&gt;
+        console.log('Home page loaded');
+    &lt;/script&gt;
+&lt;?php $this-&gt;endSection() ?&gt;</code></pre>
+
+<h3>Rendered Output</h3>
+<p>When a request hits <code>GET /</code>, the controller renders <code>home/index.phtml</code> inside <code>layouts/main.phtml</code>. The final HTML sent to the browser combines them:</p>
+
+<ul>
+    <li>The <code>&lt;head&gt;</code> includes both the layout's common stylesheet and the page's section content (meta tag and home.css)</li>
+    <li>The <code>&lt;main&gt;</code> contains the rendered page body (heading and feature list)</li>
+    <li>The bottom of <code>&lt;body&gt;</code> includes both the common app.js and the page's scripts section</li>
+</ul>
+
+<h2>Best Practices</h2>
+
+<h3>Always Escape Output</h3>
+<p>Any data that comes from user input, a database, or an external source must be escaped before output. Use <code>htmlspecialchars()</code> consistently:</p>
+
+<pre><code>&lt;!-- Safe --&gt;
+&lt;p&gt;&lt;?= htmlspecialchars($user-&gt;bio, ENT_QUOTES, 'UTF-8') ?&gt;&lt;/p&gt;
+
+&lt;!-- Dangerous — never do this with user data --&gt;
+&lt;p&gt;&lt;?= $user-&gt;bio ?&gt;&lt;/p&gt;</code></pre>
+
+<h3>Use ViewBag for Layout-Level Data</h3>
+<p>Data that the layout needs &mdash; page titles, user context for navigation, breadcrumbs &mdash; should go on the ViewBag so it is accessible in both the layout and the page template:</p>
+
+<pre><code>$this-&gt;viewBag-&gt;title = 'User Profile';
+$this-&gt;viewBag-&gt;userContext = $this-&gt;getUserContext();
+$this-&gt;viewBag-&gt;breadcrumbs = ['Home' =&gt; '/', 'Profile' =&gt; null];</code></pre>
+
+<h3>Use Template Data for Page-Specific Data</h3>
+<p>Data that only the page template needs should go in the <code>$data</code> array passed to <code>view()</code>. This keeps the separation clear and avoids polluting the ViewBag with page-specific concerns:</p>
+
+<pre><code>return $this-&gt;view('users/show', [
+    'user' =&gt; $user,
+    'recentPosts' =&gt; $posts,
+]);</code></pre>
+
+<h3>Keep Templates Thin</h3>
+<p>Templates should focus on rendering. Business logic, data fetching, and complex computations belong in your controllers and services. A template should receive prepared data and output HTML &mdash; nothing more.</p>
+
+<pre><code>&lt;!-- Good: template receives prepared data --&gt;
+&lt;p&gt;Total: $&lt;?= number_format($orderTotal, 2) ?&gt;&lt;/p&gt;
+
+&lt;!-- Avoid: complex logic in templates --&gt;
+&lt;?php
+$total = 0;
+foreach ($items as $item) {
+    $total += $item-&gt;price * $item-&gt;quantity;
+    if ($item-&gt;hasDiscount()) {
+        $total -= $item-&gt;getDiscountAmount();
+    }
+}
+?&gt;
+&lt;p&gt;Total: $&lt;?= number_format($total, 2) ?&gt;&lt;/p&gt;</code></pre>
+
+<h3>Use Sections for Page-Specific Assets</h3>
+<p>Keep common CSS and JavaScript in the layout. Use sections only for assets that are specific to a single page. This keeps page load times fast and avoids loading unnecessary resources:</p>
+
+<pre><code>&lt;!-- In a page that uses a map library --&gt;
+&lt;?php $this-&gt;beginSection('head') ?&gt;
+    &lt;link rel="stylesheet" href="/css/leaflet.css"&gt;
+&lt;?php $this-&gt;endSection() ?&gt;
+
+&lt;?php $this-&gt;beginSection('scripts') ?&gt;
+    &lt;script src="/js/leaflet.js"&gt;&lt;/script&gt;
+    &lt;script src="/js/map-page.js"&gt;&lt;/script&gt;
+&lt;?php $this-&gt;endSection() ?&gt;</code></pre>

@@ -39,6 +39,10 @@
 			}
 		}
 	},
+	"logging": {
+		"path": null,
+		"level": "debug"
+	},
 	"cors": {
 		"allowedOrigins": ["*"],
 		"allowedMethods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],

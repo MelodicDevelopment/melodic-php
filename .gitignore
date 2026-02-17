@@ -2,3 +2,4 @@
 composer.phar
 /.claude/settings.local.json
 .DS_Store
+example/logs/

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Melodic\Routing;
 
 use Melodic\DI\Container;
-use Melodic\Http\JsonResponse;
 use Melodic\Http\Request;
 use Melodic\Http\Response;
 use Melodic\Http\Middleware\MiddlewareInterface;
@@ -24,10 +23,7 @@ class RoutingMiddleware implements MiddlewareInterface
         $result = $this->router->match($request->method(), $request->path());
 
         if ($result === null) {
-            return new JsonResponse(
-                data: ['error' => 'Not Found'],
-                statusCode: 404,
-            );
+            return $handler->handle($request);
         }
 
         /** @var Route $route */

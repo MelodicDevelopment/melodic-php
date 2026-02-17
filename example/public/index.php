@@ -12,6 +12,7 @@ use Melodic\Data\DbContext;
 use Melodic\Data\DbContextInterface;
 use Melodic\Http\Middleware\CorsMiddleware;
 use Melodic\Http\Middleware\JsonBodyParserMiddleware;
+use Melodic\Log\LoggingServiceProvider;
 use Melodic\Security\AuthLoginRendererInterface;
 use Melodic\Security\SecurityServiceProvider;
 use Example\Middleware\RequestTimingMiddleware;
@@ -21,7 +22,8 @@ use Melodic\View\ViewEngine;
 $app = new Application(dirname(__DIR__));
 $app->loadConfig('config/config.json');
 
-// Register the security service provider (wires OIDC, JWT, OAuth, middleware)
+// Register service providers
+$app->register(new LoggingServiceProvider());
 $app->register(new SecurityServiceProvider());
 
 // Register services in the DI container

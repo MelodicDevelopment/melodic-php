@@ -6,12 +6,15 @@ namespace Melodic\Core;
 
 use Melodic\DI\Container;
 use Melodic\DI\ServiceProvider;
+use Melodic\Http\Middleware\ErrorHandlerMiddleware;
 use Melodic\Http\Middleware\MiddlewareInterface;
 use Melodic\Http\Middleware\Pipeline;
 use Melodic\Http\Middleware\RequestHandlerInterface;
 use Melodic\Http\Request;
 use Melodic\Http\Response;
-use Melodic\Http\JsonResponse;
+use Melodic\Http\Exception\NotFoundException;
+use Melodic\Log\LoggerInterface;
+use Melodic\Log\NullLogger;
 use Melodic\Routing\Router;
 use Melodic\Routing\RoutingMiddleware;
 
@@ -111,42 +114,66 @@ class Application
 
     public function run(?Request $request = null): void
     {
-        // Boot all service providers
-        foreach ($this->providers as $provider) {
-            $provider->boot($this->container);
-        }
+        $debug = (bool) $this->configuration->get('app.debug', false);
 
-        $request = $request ?? Request::capture();
-
-        // Build the final handler (routing middleware)
-        $routingMiddleware = new RoutingMiddleware($this->router, $this->container);
-        $finalHandler = new class($routingMiddleware) implements RequestHandlerInterface {
-            public function __construct(
-                private readonly RoutingMiddleware $routing,
-            ) {}
-
-            public function handle(Request $request): Response
-            {
-                return $this->routing->process(
-                    $request,
-                    new class implements RequestHandlerInterface {
-                        public function handle(Request $request): Response
-                        {
-                            return new JsonResponse(['error' => 'Not Found'], 404);
-                        }
-                    }
-                );
+        try {
+            // Boot all service providers
+            foreach ($this->providers as $provider) {
+                $provider->boot($this->container);
             }
-        };
 
-        // Build pipeline with all middleware
-        $pipeline = new Pipeline($finalHandler);
+            // Resolve logger (falls back to NullLogger if not registered)
+            $logger = $this->container->has(LoggerInterface::class)
+                ? $this->container->get(LoggerInterface::class)
+                : new NullLogger();
 
-        foreach ($this->middlewares as $middleware) {
-            $pipeline->pipe($middleware);
+            $request = $request ?? Request::capture();
+
+            // Build the final handler (routing middleware)
+            $routingMiddleware = new RoutingMiddleware($this->router, $this->container);
+            $finalHandler = new class($routingMiddleware) implements RequestHandlerInterface {
+                public function __construct(
+                    private readonly RoutingMiddleware $routing,
+                ) {}
+
+                public function handle(Request $request): Response
+                {
+                    return $this->routing->process(
+                        $request,
+                        new class implements RequestHandlerInterface {
+                            public function handle(Request $request): Response
+                            {
+                                throw new NotFoundException();
+                            }
+                        }
+                    );
+                }
+            };
+
+            // Build pipeline with all middleware
+            $pipeline = new Pipeline($finalHandler);
+
+            // Error handler is piped first so it wraps the entire middleware stack
+            $pipeline->pipe(new ErrorHandlerMiddleware($logger, $debug));
+
+            foreach ($this->middlewares as $middleware) {
+                $pipeline->pipe($middleware);
+            }
+
+            $response = $pipeline->handle($request);
+            $response->send();
+        } catch (\Throwable $e) {
+            // Last-resort safety net for catastrophic failures
+            http_response_code(500);
+            header('Content-Type: text/plain; charset=UTF-8');
+
+            if ($debug) {
+                echo "Fatal error: {$e->getMessage()}\n";
+                echo "In: {$e->getFile()}:{$e->getLine()}\n";
+                echo $e->getTraceAsString();
+            } else {
+                echo 'An internal server error occurred.';
+            }
         }
-
-        $response = $pipeline->handle($request);
-        $response->send();
     }
 }

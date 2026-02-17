@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?= htmlspecialchars($viewBag->title ?? 'Melodic Docs') ?></title>
+    <link rel="stylesheet" href="/css/site.css">
+    <?= $this->renderSection('head') ?>
+</head>
+<body>
+    <?php include __DIR__ . '/../partials/nav.phtml'; ?>
+
+    <?php include __DIR__ . '/../partials/doc-sidebar.phtml'; ?>
+
+    <main class="docs-main">
+        <div class="docs-container">
+            <div class="docs-content">
+                <?= $this->renderBody() ?>
+            </div>
+
+            <?php
+            $pages = $viewBag->pages ?? [];
+            $current = $viewBag->currentPage ?? null;
+            $sidebarType = $viewBag->sidebarType ?? 'docs';
+            $baseUrl = $sidebarType === 'tutorials' ? '/tutorials' : '/docs';
+            $keys = array_keys($pages);
+            $idx = $current !== null ? array_search($current, $keys, true) : false;
+            $prev = ($idx !== false && $idx > 0) ? $keys[$idx - 1] : null;
+            $next = ($idx !== false && $idx < count($keys) - 1) ? $keys[$idx + 1] : null;
+            ?>
+            <?php if ($prev !== null || $next !== null): ?>
+            <div class="docs-nav">
+                <?php if ($prev !== null): ?>
+                    <a href="<?= $baseUrl ?>/<?= $prev ?>">
+                        <span class="nav-label">&larr; Previous</span>
+                        <span class="nav-title"><?= htmlspecialchars($pages[$prev]) ?></span>
+                    </a>
+                <?php else: ?>
+                    <span></span>
+                <?php endif; ?>
+                <?php if ($next !== null): ?>
+                    <a href="<?= $baseUrl ?>/<?= $next ?>" class="next">
+                        <span class="nav-label">Next &rarr;</span>
+                        <span class="nav-title"><?= htmlspecialchars($pages[$next]) ?></span>
+                    </a>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
+
+            <div class="site-footer" style="border-top: none;">
+                Built with <a href="/docs">Melodic PHP Framework</a> &mdash; <a href="https://melodic.dev" target="_blank" rel="noopener">melodic.dev</a>
+            </div>
+        </div>
+    </main>
+    <script src="/js/site.js"></script>
+    <?= $this->renderSection('scripts') ?>
+</body>
+</html>

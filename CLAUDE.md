@@ -70,7 +70,7 @@ melodic-php/
 │   └── View/
 │       ├── ViewEngine.php               # .phtml rendering with layouts/sections
 │       └── ViewBag.php                  # Dynamic key-value store
-└── example/                             # Working demo application
+└── web/php.melodic.dev/                 # Documentation website (dogfoods the framework)
 ```
 
 ## Key Patterns
@@ -176,7 +176,7 @@ return $this->view('home/index', ['message' => 'Hello']);
 
 ```bash
 composer install
-php -S localhost:8080 -t example/public
+php -S localhost:8080 -t web/php.melodic.dev/public
 ```
 
 ## Dependencies

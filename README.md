@@ -17,15 +17,15 @@ composer install
 ## Quick Start
 
 ```bash
-# Start the example application
-php -S localhost:8080 -t example/public
+# Start the documentation website (runs on Melodic itself)
+php -S localhost:8080 -t web/php.melodic.dev/public
 ```
 
 Then visit:
-- `http://localhost:8080/` — MVC home page
-- `http://localhost:8080/about` — About page
-- `http://localhost:8080/api/users` — JSON API listing all users
-- `http://localhost:8080/api/users/1` — Single user by ID
+- `http://localhost:8080/` — Landing page
+- `http://localhost:8080/docs` — Framework documentation
+- `http://localhost:8080/tutorials` — Step-by-step tutorials
+- `http://localhost:8080/why-melodic` — Philosophy & comparisons
 
 ## Architecture
 
@@ -143,30 +143,31 @@ melodic-php/
 │   └── View/
 │       ├── ViewEngine.php                   # Renders .phtml templates with layouts/sections/caching
 │       └── ViewBag.php                      # Dynamic key-value store for view data
-└── example/                                 # Working demo application
+└── web/php.melodic.dev/                     # Documentation website (dogfoods the framework)
     ├── config/config.json
     ├── public/
     │   ├── index.php                    # Entry point
-    │   └── .htaccess                    # Apache rewrite rules
+    │   ├── .htaccess                    # Apache rewrite rules
+    │   ├── css/site.css                 # Extracted styles
+    │   └── js/site.js                   # Copy-to-clipboard, mobile nav
     ├── src/
     │   ├── Controllers/
-    │   │   ├── UserApiController.php    # RESTful API example
-    │   │   └── HomeController.php       # MVC view example
-    │   ├── Services/
-    │   │   └── UserService.php          # Business logic layer
-    │   ├── Queries/
-    │   │   ├── GetAllUsersQuery.php
-    │   │   └── GetUserByIdQuery.php
-    │   ├── Commands/
-    │   │   ├── CreateUserCommand.php
-    │   │   └── DeleteUserCommand.php
-    │   └── Models/
-    │       └── UserModel.php
+    │   │   ├── HomeController.php       # Landing page, Why Melodic
+    │   │   ├── DocsController.php       # 18 documentation pages
+    │   │   └── TutorialController.php   # 5 tutorial walkthroughs
+    │   └── Middleware/
+    │       └── RequestTimingMiddleware.php
     └── views/
-        ├── layouts/main.phtml
-        └── home/
-            ├── index.phtml
-            └── about.phtml
+        ├── layouts/
+        │   ├── marketing.phtml          # Full-width layout
+        │   └── docs.phtml               # Sidebar + content layout
+        ├── partials/
+        │   ├── nav.phtml                # Shared navigation
+        │   ├── footer.phtml             # Shared footer
+        │   └── doc-sidebar.phtml        # Grouped sidebar
+        ├── pages/                       # Marketing pages
+        ├── docs/                        # 18 documentation pages
+        └── tutorials/                   # 5 tutorial pages
 ```
 
 ## Application Bootstrap

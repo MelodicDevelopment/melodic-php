@@ -1,0 +1,561 @@
+<h1>Build a Blog</h1>
+<p>In this tutorial you will build a blog application with server-rendered HTML views. You will use MvcController, layouts, sections, ViewBag, and form handling to create a complete read-and-write blog.</p>
+
+<div class="callout callout-info">
+    <p><strong>What you will build:</strong> A blog with a post list page, individual post pages, and a form to create new posts. All rendered with Melodic's template engine using layouts and sections.</p>
+</div>
+
+<h2>Step 1: Project Setup</h2>
+
+<p>Create the project and install the framework:</p>
+
+<pre><code>mkdir my-blog &amp;&amp; cd my-blog
+composer require melodic/framework</code></pre>
+
+<p>Create the directory structure:</p>
+
+<pre><code>mkdir -p public config src/{Models,Queries,Commands,Services,Controllers} views/{layouts,blog}</code></pre>
+
+<p>Create <code>config/config.json</code>:</p>
+
+<pre><code>{
+    "app": {
+        "name": "My Blog",
+        "debug": true
+    },
+    "database": {
+        "dsn": "sqlite:database.sqlite"
+    }
+}</code></pre>
+
+<p>Create the SQLite database:</p>
+
+<pre><code>sqlite3 database.sqlite "CREATE TABLE posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    body TEXT NOT NULL,
+    author TEXT NOT NULL DEFAULT 'Anonymous',
+    created_at TEXT NOT NULL
+);"</code></pre>
+
+<p>Create the entry point at <code>public/index.php</code>. We will fill in services and routes in later steps:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use Melodic\Core\Application;
+use Melodic\Http\Middleware\JsonBodyParserMiddleware;
+
+$app = new Application(dirname(__DIR__));
+$app-&gt;loadConfig('config/config.json');
+
+$app-&gt;addMiddleware(new JsonBodyParserMiddleware());
+
+// Services and routes will be added later
+
+$app-&gt;run();</code></pre>
+
+<h2>Step 2: Create the Post Model</h2>
+
+<p>Create <code>src/Models/Post.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+use Melodic\Data\Model;
+
+class Post extends Model
+{
+    public int $id;
+    public string $title;
+    public string $slug;
+    public string $body;
+    public string $author;
+    public string $created_at;
+}</code></pre>
+
+<h2>Step 3: Create Queries and Commands</h2>
+
+<h3>GetAllPostsQuery</h3>
+
+<p>Create <code>src/Queries/GetAllPostsQuery.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Queries;
+
+use App\Models\Post;
+use Melodic\Data\DbContextInterface;
+use Melodic\Data\QueryInterface;
+
+class GetAllPostsQuery implements QueryInterface
+{
+    private readonly string $sql;
+
+    public function __construct()
+    {
+        $this-&gt;sql = "SELECT * FROM posts ORDER BY created_at DESC";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    /**
+     * @return Post[]
+     */
+    public function execute(DbContextInterface $context): array
+    {
+        return $context-&gt;query(Post::class, $this-&gt;sql);
+    }
+}</code></pre>
+
+<h3>GetPostBySlugQuery</h3>
+
+<p>Create <code>src/Queries/GetPostBySlugQuery.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Queries;
+
+use App\Models\Post;
+use Melodic\Data\DbContextInterface;
+use Melodic\Data\QueryInterface;
+
+class GetPostBySlugQuery implements QueryInterface
+{
+    private readonly string $sql;
+
+    public function __construct(
+        private readonly string $slug,
+    ) {
+        $this-&gt;sql = "SELECT * FROM posts WHERE slug = :slug";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    public function execute(DbContextInterface $context): ?Post
+    {
+        return $context-&gt;queryFirst(Post::class, $this-&gt;sql, ['slug' =&gt; $this-&gt;slug]);
+    }
+}</code></pre>
+
+<h3>CreatePostCommand</h3>
+
+<p>Create <code>src/Commands/CreatePostCommand.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Commands;
+
+use Melodic\Data\CommandInterface;
+use Melodic\Data\DbContextInterface;
+
+class CreatePostCommand implements CommandInterface
+{
+    private readonly string $sql;
+
+    public function __construct(
+        private readonly string $title,
+        private readonly string $slug,
+        private readonly string $body,
+        private readonly string $author,
+    ) {
+        $this-&gt;sql = "INSERT INTO posts (title, slug, body, author, created_at)
+                      VALUES (:title, :slug, :body, :author, datetime('now'))";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    public function execute(DbContextInterface $context): int
+    {
+        return $context-&gt;command($this-&gt;sql, [
+            'title' =&gt; $this-&gt;title,
+            'slug' =&gt; $this-&gt;slug,
+            'body' =&gt; $this-&gt;body,
+            'author' =&gt; $this-&gt;author,
+        ]);
+    }
+}</code></pre>
+
+<h2>Step 4: Create the PostService</h2>
+
+<p>Create <code>src/Services/PostService.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Services;
+
+use App\Commands\CreatePostCommand;
+use App\Models\Post;
+use App\Queries\GetAllPostsQuery;
+use App\Queries\GetPostBySlugQuery;
+use Melodic\Service\Service;
+
+class PostService extends Service
+{
+    /**
+     * @return Post[]
+     */
+    public function getAll(): array
+    {
+        return (new GetAllPostsQuery())-&gt;execute($this-&gt;context);
+    }
+
+    public function getBySlug(string $slug): ?Post
+    {
+        return (new GetPostBySlugQuery($slug))-&gt;execute($this-&gt;context);
+    }
+
+    public function create(string $title, string $body, string $author): void
+    {
+        $slug = $this-&gt;generateSlug($title);
+
+        (new CreatePostCommand($title, $slug, $body, $author))-&gt;execute($this-&gt;context);
+    }
+
+    private function generateSlug(string $title): string
+    {
+        $slug = strtolower(trim($title));
+        $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
+
+        return trim($slug, '-');
+    }
+}</code></pre>
+
+<h2>Step 5: Create the BlogController</h2>
+
+<p>The <code>BlogController</code> extends <code>MvcController</code> which provides <code>view()</code>, <code>viewBag</code>, and <code>setLayout()</code>. It receives the <code>ViewEngine</code> through its constructor (auto-wired by the container).</p>
+
+<p>Create <code>src/Controllers/BlogController.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Controllers;
+
+use App\Services\PostService;
+use Melodic\Controller\MvcController;
+use Melodic\Http\RedirectResponse;
+use Melodic\Http\Response;
+use Melodic\View\ViewEngine;
+
+class BlogController extends MvcController
+{
+    public function __construct(
+        ViewEngine $viewEngine,
+        private readonly PostService $postService,
+    ) {
+        parent::__construct($viewEngine);
+    }
+
+    public function index(): Response
+    {
+        $posts = $this-&gt;postService-&gt;getAll();
+
+        $this-&gt;viewBag-&gt;title = 'My Blog';
+        $this-&gt;setLayout('layouts/main');
+
+        return $this-&gt;view('blog/index', ['posts' =&gt; $posts]);
+    }
+
+    public function show(string $slug): Response
+    {
+        $post = $this-&gt;postService-&gt;getBySlug($slug);
+
+        if ($post === null) {
+            return $this-&gt;notFound(['error' =&gt; 'Post not found']);
+        }
+
+        $this-&gt;viewBag-&gt;title = $post-&gt;title . ' &mdash; My Blog';
+        $this-&gt;setLayout('layouts/main');
+
+        return $this-&gt;view('blog/show', ['post' =&gt; $post]);
+    }
+
+    public function create(): Response
+    {
+        $this-&gt;viewBag-&gt;title = 'New Post &mdash; My Blog';
+        $this-&gt;setLayout('layouts/main');
+
+        return $this-&gt;view('blog/create');
+    }
+
+    public function store(): Response
+    {
+        $title = $this-&gt;request-&gt;body('title', '');
+        $body = $this-&gt;request-&gt;body('body', '');
+        $author = $this-&gt;request-&gt;body('author', 'Anonymous');
+
+        if (empty($title) || empty($body)) {
+            $this-&gt;viewBag-&gt;title = 'New Post &mdash; My Blog';
+            $this-&gt;viewBag-&gt;error = 'Title and body are required.';
+            $this-&gt;setLayout('layouts/main');
+
+            return $this-&gt;view('blog/create', [
+                'oldTitle' =&gt; $title,
+                'oldBody' =&gt; $body,
+                'oldAuthor' =&gt; $author,
+            ]);
+        }
+
+        $this-&gt;postService-&gt;create($title, $body, $author);
+
+        return new RedirectResponse('/blog');
+    }
+}</code></pre>
+
+<div class="callout callout-info">
+    <p><strong>Parent constructor:</strong> When extending <code>MvcController</code> and adding your own dependencies, call <code>parent::__construct($viewEngine)</code> to ensure the view system is initialized.</p>
+</div>
+
+<h2>Step 6: Create the Layout</h2>
+
+<p>Layouts use <code>renderBody()</code> to insert page content and <code>renderSection()</code> for optional named blocks like scripts or styles.</p>
+
+<p>Create <code>views/layouts/main.phtml</code>:</p>
+
+<pre><code>&lt;!DOCTYPE html&gt;
+&lt;html lang="en"&gt;
+&lt;head&gt;
+    &lt;meta charset="UTF-8"&gt;
+    &lt;meta name="viewport" content="width=device-width, initial-scale=1.0"&gt;
+    &lt;title&gt;&lt;?= htmlspecialchars($viewBag-&gt;title ?? 'My Blog') ?&gt;&lt;/title&gt;
+    &lt;style&gt;
+        body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; }
+        nav { border-bottom: 1px solid #ddd; padding-bottom: 1rem; margin-bottom: 2rem; }
+        nav a { margin-right: 1rem; text-decoration: none; color: #4f46e5; }
+        nav a:hover { text-decoration: underline; }
+        .post-meta { color: #666; font-size: 0.875rem; }
+        .post-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem; }
+        .post-card h2 a { text-decoration: none; color: #111; }
+        .post-card h2 a:hover { color: #4f46e5; }
+        footer { border-top: 1px solid #ddd; padding-top: 1rem; margin-top: 3rem; color: #999; font-size: 0.85rem; }
+        form label { display: block; margin-bottom: 0.25rem; font-weight: 600; }
+        form input, form textarea { width: 100%; padding: 0.5rem; margin-bottom: 1rem; border: 1px solid #ddd; border-radius: 4px; }
+        form textarea { min-height: 200px; }
+        form button { background: #4f46e5; color: #fff; border: none; padding: 0.5rem 1.5rem; border-radius: 4px; cursor: pointer; }
+        .error { background: #fef2f2; border: 1px solid #fca5a5; color: #b91c1c; padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem; }
+    &lt;/style&gt;
+    &lt;?= $this-&gt;renderSection('head') ?&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;nav&gt;
+        &lt;a href="/blog"&gt;Home&lt;/a&gt;
+        &lt;a href="/blog/new"&gt;New Post&lt;/a&gt;
+    &lt;/nav&gt;
+
+    &lt;main&gt;
+        &lt;?= $this-&gt;renderBody() ?&gt;
+    &lt;/main&gt;
+
+    &lt;footer&gt;
+        Built with Melodic PHP Framework
+    &lt;/footer&gt;
+
+    &lt;?= $this-&gt;renderSection('scripts') ?&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+<p>Key layout methods:</p>
+
+<table>
+    <tr><th>Method</th><th>Purpose</th></tr>
+    <tr><td><code>$this-&gt;renderBody()</code></td><td>Inserts the child view's content into the layout</td></tr>
+    <tr><td><code>$this-&gt;renderSection('name')</code></td><td>Inserts a named section defined by the child view</td></tr>
+</table>
+
+<h2>Step 7: Create the Views</h2>
+
+<h3>Post List (blog/index.phtml)</h3>
+
+<p>Create <code>views/blog/index.phtml</code>:</p>
+
+<pre><code>&lt;h1&gt;Blog&lt;/h1&gt;
+
+&lt;?php if (empty($posts)): ?&gt;
+    &lt;p&gt;No posts yet. &lt;a href="/blog/new"&gt;Write the first one!&lt;/a&gt;&lt;/p&gt;
+&lt;?php endif; ?&gt;
+
+&lt;?php foreach ($posts as $post): ?&gt;
+    &lt;div class="post-card"&gt;
+        &lt;h2&gt;&lt;a href="/blog/&lt;?= htmlspecialchars($post-&gt;slug) ?&gt;"&gt;&lt;?= htmlspecialchars($post-&gt;title) ?&gt;&lt;/a&gt;&lt;/h2&gt;
+        &lt;p class="post-meta"&gt;
+            By &lt;?= htmlspecialchars($post-&gt;author) ?&gt; &amp;mdash;
+            &lt;?= htmlspecialchars($post-&gt;created_at) ?&gt;
+        &lt;/p&gt;
+        &lt;p&gt;&lt;?= htmlspecialchars(mb_substr($post-&gt;body, 0, 200)) ?&gt;&lt;?= mb_strlen($post-&gt;body) &gt; 200 ? '...' : '' ?&gt;&lt;/p&gt;
+    &lt;/div&gt;
+&lt;?php endforeach; ?&gt;</code></pre>
+
+<h3>Single Post (blog/show.phtml)</h3>
+
+<p>Create <code>views/blog/show.phtml</code>:</p>
+
+<pre><code>&lt;article&gt;
+    &lt;h1&gt;&lt;?= htmlspecialchars($post-&gt;title) ?&gt;&lt;/h1&gt;
+    &lt;p class="post-meta"&gt;
+        By &lt;?= htmlspecialchars($post-&gt;author) ?&gt; &amp;mdash;
+        &lt;?= htmlspecialchars($post-&gt;created_at) ?&gt;
+    &lt;/p&gt;
+    &lt;div&gt;
+        &lt;?= nl2br(htmlspecialchars($post-&gt;body)) ?&gt;
+    &lt;/div&gt;
+&lt;/article&gt;
+
+&lt;p&gt;&lt;a href="/blog"&gt;&amp;larr; Back to all posts&lt;/a&gt;&lt;/p&gt;
+
+&lt;?php $this-&gt;beginSection('head') ?&gt;
+    &lt;meta property="og:title" content="&lt;?= htmlspecialchars($post-&gt;title) ?&gt;"&gt;
+&lt;?php $this-&gt;endSection() ?&gt;</code></pre>
+
+<div class="callout callout-tip">
+    <p><strong>Sections in action:</strong> The <code>beginSection('head')</code> / <code>endSection()</code> block captures everything between them and makes it available to the layout via <code>renderSection('head')</code>. This lets child views inject content into the <code>&lt;head&gt;</code> or add scripts at the bottom.</p>
+</div>
+
+<h3>Create Post Form (blog/create.phtml)</h3>
+
+<p>Create <code>views/blog/create.phtml</code>:</p>
+
+<pre><code>&lt;h1&gt;New Post&lt;/h1&gt;
+
+&lt;?php if (isset($viewBag-&gt;error)): ?&gt;
+    &lt;div class="error"&gt;&lt;?= htmlspecialchars($viewBag-&gt;error) ?&gt;&lt;/div&gt;
+&lt;?php endif; ?&gt;
+
+&lt;form method="POST" action="/blog"&gt;
+    &lt;label for="title"&gt;Title&lt;/label&gt;
+    &lt;input type="text" id="title" name="title" value="&lt;?= htmlspecialchars($oldTitle ?? '') ?&gt;" required&gt;
+
+    &lt;label for="author"&gt;Author&lt;/label&gt;
+    &lt;input type="text" id="author" name="author" value="&lt;?= htmlspecialchars($oldAuthor ?? 'Anonymous') ?&gt;"&gt;
+
+    &lt;label for="body"&gt;Content&lt;/label&gt;
+    &lt;textarea id="body" name="body" required&gt;&lt;?= htmlspecialchars($oldBody ?? '') ?&gt;&lt;/textarea&gt;
+
+    &lt;button type="submit"&gt;Publish&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+
+<p>The form posts back to <code>/blog</code>. On validation failure, the controller re-renders the form with the old values and an error message stored in <code>viewBag-&gt;error</code>.</p>
+
+<h2>Step 8: Register Services and Routes</h2>
+
+<p>Update <code>public/index.php</code> with the complete configuration:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use App\Controllers\BlogController;
+use App\Services\PostService;
+use Melodic\Core\Application;
+use Melodic\Data\DbContext;
+use Melodic\Data\DbContextInterface;
+use Melodic\Http\Middleware\JsonBodyParserMiddleware;
+use Melodic\View\ViewEngine;
+
+$app = new Application(dirname(__DIR__));
+$app-&gt;loadConfig('config/config.json');
+
+$app-&gt;addMiddleware(new JsonBodyParserMiddleware());
+
+$app-&gt;services(function ($container) use ($app) {
+    $container-&gt;singleton(DbContextInterface::class, function () use ($app) {
+        $dsn = $app-&gt;config('database.dsn');
+        $pdo = new PDO($dsn);
+        $pdo-&gt;setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+        return new DbContext($pdo);
+    });
+
+    // Register the ViewEngine pointing to the views directory
+    $container-&gt;singleton(ViewEngine::class, function () use ($app) {
+        return new ViewEngine($app-&gt;getBasePath() . '/views');
+    });
+
+    $container-&gt;bind(PostService::class, PostService::class);
+});
+
+$app-&gt;routes(function ($router) {
+    $router-&gt;group('/blog', function ($router) {
+        $router-&gt;get('', BlogController::class, 'index');
+        $router-&gt;get('/new', BlogController::class, 'create');
+        $router-&gt;post('', BlogController::class, 'store');
+        $router-&gt;get('/{slug}', BlogController::class, 'show');
+    });
+});
+
+$app-&gt;run();</code></pre>
+
+<div class="callout callout-warning">
+    <p><strong>Route order matters:</strong> The <code>/blog/new</code> route must be registered before <code>/blog/{slug}</code>, otherwise the router would match "new" as a slug parameter.</p>
+</div>
+
+<p>The route group prefixes all routes with <code>/blog</code>:</p>
+
+<table>
+    <tr><th>Method</th><th>Path</th><th>Action</th><th>Description</th></tr>
+    <tr><td>GET</td><td>/blog</td><td>index</td><td>List all posts</td></tr>
+    <tr><td>GET</td><td>/blog/new</td><td>create</td><td>Show the create form</td></tr>
+    <tr><td>POST</td><td>/blog</td><td>store</td><td>Save a new post</td></tr>
+    <tr><td>GET</td><td>/blog/{slug}</td><td>show</td><td>Show a single post</td></tr>
+</table>
+
+<h2>Step 9: Test Your Blog</h2>
+
+<p>Start the server:</p>
+
+<pre><code>php -S localhost:8080 -t public</code></pre>
+
+<p>Open <code>http://localhost:8080/blog</code> in your browser. You should see the empty blog with a link to create your first post. Click "New Post", fill in the form, and submit. You will be redirected back to the post list where your new post appears.</p>
+
+<h2>What You Built</h2>
+
+<p>Your blog follows the MVC pattern within the Melodic architecture:</p>
+
+<pre><code>Browser &rarr; Router &rarr; BlogController &rarr; PostService &rarr; Query/Command &rarr; SQLite
+                          &darr;
+                   ViewEngine &rarr; Layout + View &rarr; HTML Response</code></pre>
+
+<table>
+    <tr><th>File</th><th>Purpose</th></tr>
+    <tr><td><code>src/Models/Post.php</code></td><td>Post data model</td></tr>
+    <tr><td><code>src/Queries/GetAllPostsQuery.php</code></td><td>Fetch all posts</td></tr>
+    <tr><td><code>src/Queries/GetPostBySlugQuery.php</code></td><td>Fetch a post by slug</td></tr>
+    <tr><td><code>src/Commands/CreatePostCommand.php</code></td><td>Insert a new post</td></tr>
+    <tr><td><code>src/Services/PostService.php</code></td><td>Blog business logic</td></tr>
+    <tr><td><code>src/Controllers/BlogController.php</code></td><td>MVC controller with view rendering</td></tr>
+    <tr><td><code>views/layouts/main.phtml</code></td><td>Shared layout with nav, footer, sections</td></tr>
+    <tr><td><code>views/blog/index.phtml</code></td><td>Post list view</td></tr>
+    <tr><td><code>views/blog/show.phtml</code></td><td>Single post view with head section</td></tr>
+    <tr><td><code>views/blog/create.phtml</code></td><td>New post form with validation feedback</td></tr>
+</table>
+
+<div class="callout callout-tip">
+    <p><strong>Next steps:</strong> Add edit and delete functionality, style the blog with a proper CSS file using <code>beginSection('head')</code>, or protect the create/store routes with <a href="/tutorials/adding-authentication">authentication</a>.</p>
+</div>

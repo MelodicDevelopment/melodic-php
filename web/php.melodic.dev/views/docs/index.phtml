@@ -1,0 +1,146 @@
+<h1>Melodic PHP Framework</h1>
+<p>A modern PHP 8.2+ framework with CQRS, JWT authentication, dependency injection, and a middleware pipeline. Built for clarity, not magic.</p>
+
+<h2>Architecture</h2>
+<p>Melodic follows a layered architecture where each request flows through a predictable chain:</p>
+
+<pre><code>HTTP Request &rarr; Middleware Pipeline &rarr; Router &rarr; Controller &rarr; Service &rarr; Query/Command &rarr; Database</code></pre>
+
+<p>Every layer has a single responsibility. Controllers handle HTTP concerns, services encapsulate business logic, and queries/commands own data access. There are no facades, no mediator buses, and no hidden magic &mdash; just explicit, traceable code.</p>
+
+<h2>Core Principles</h2>
+<ul>
+    <li><strong>PHP 8.2+</strong> &mdash; enums, readonly properties, constructor promotion, match expressions, and named arguments throughout</li>
+    <li><strong>CQRS data access</strong> &mdash; separate Query and Command objects executed through DbContext</li>
+    <li><strong>Constructor injection</strong> &mdash; auto-wiring DI container resolves dependencies from type hints</li>
+    <li><strong>PSR-15-style middleware</strong> &mdash; composable pipeline for cross-cutting concerns</li>
+    <li><strong>Multi-provider auth</strong> &mdash; OIDC, OAuth2, and local username/password with JWT tokens</li>
+    <li><strong>MVC + API</strong> &mdash; separate controller base classes for template-rendered views and JSON APIs</li>
+    <li><strong>No hidden behavior</strong> &mdash; no facades, no service locators, no global state</li>
+</ul>
+
+<h2>Quick Start</h2>
+<pre><code>composer require melodic/framework
+
+# Create your entry point
+mkdir -p public config
+touch public/index.php config/config.json</code></pre>
+
+<p>Then bootstrap your application:</p>
+
+<pre><code>&lt;?php
+// public/index.php
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use Melodic\Core\Application;
+
+$app = new Application(dirname(__DIR__));
+$app-&gt;loadConfig('config/config.json');
+
+$app-&gt;routes(function ($router) {
+    $router-&gt;get('/', MyController::class, 'index');
+});
+
+$app-&gt;run();</code></pre>
+
+<h2>Documentation</h2>
+
+<h3>Getting Started</h3>
+<div class="doc-index-grid">
+    <a href="/docs/getting-started" class="doc-index-card">
+        <h4>Getting Started</h4>
+        <p>Install the framework, set up a project, and bootstrap your first application.</p>
+    </a>
+    <a href="/docs/configuration" class="doc-index-card">
+        <h4>Configuration</h4>
+        <p>JSON config files, dot-notation access, environment-specific overrides.</p>
+    </a>
+</div>
+
+<h3>Core</h3>
+<div class="doc-index-grid">
+    <a href="/docs/routing" class="doc-index-card">
+        <h4>Routing</h4>
+        <p>Route registration, parameters, groups, API resources, and middleware.</p>
+    </a>
+    <a href="/docs/controllers" class="doc-index-card">
+        <h4>Controllers</h4>
+        <p>API and MVC controllers, response helpers, request data, and view rendering.</p>
+    </a>
+    <a href="/docs/middleware" class="doc-index-card">
+        <h4>Middleware</h4>
+        <p>Pipeline model, built-in middleware, custom middleware, and short-circuiting.</p>
+    </a>
+    <a href="/docs/dependency-injection" class="doc-index-card">
+        <h4>Dependency Injection</h4>
+        <p>Auto-wiring container, interface binding, singletons, and service providers.</p>
+    </a>
+</div>
+
+<h3>Data &amp; Services</h3>
+<div class="doc-index-grid">
+    <a href="/docs/data-access" class="doc-index-card">
+        <h4>Data Access &amp; CQRS</h4>
+        <p>DbContext, queries, commands, model hydration, and transactions.</p>
+    </a>
+    <a href="/docs/services" class="doc-index-card">
+        <h4>Services</h4>
+        <p>Business logic layer, service interfaces, read/write separation.</p>
+    </a>
+    <a href="/docs/validation" class="doc-index-card">
+        <h4>Validation</h4>
+        <p>Declarative validation rules, custom validators, and error formatting.</p>
+    </a>
+</div>
+
+<h3>Infrastructure</h3>
+<div class="doc-index-grid">
+    <a href="/docs/error-handling" class="doc-index-card">
+        <h4>Error Handling</h4>
+        <p>Centralized exception handler, error responses, and debug mode.</p>
+    </a>
+    <a href="/docs/logging" class="doc-index-card">
+        <h4>Logging</h4>
+        <p>PSR-3-style logger, file-based output, and configurable log levels.</p>
+    </a>
+    <a href="/docs/events" class="doc-index-card">
+        <h4>Events</h4>
+        <p>Event dispatcher, listeners, and decoupled event-driven architecture.</p>
+    </a>
+    <a href="/docs/caching" class="doc-index-card">
+        <h4>Caching</h4>
+        <p>Cache interface, file-based caching, and TTL-based expiration.</p>
+    </a>
+    <a href="/docs/sessions" class="doc-index-card">
+        <h4>Sessions</h4>
+        <p>Session management, flash messages, and session-backed state.</p>
+    </a>
+    <a href="/docs/console" class="doc-index-card">
+        <h4>Console</h4>
+        <p>CLI commands, task runners, and artisan-style console tools.</p>
+    </a>
+</div>
+
+<h3>Frontend</h3>
+<div class="doc-index-grid">
+    <a href="/docs/views" class="doc-index-card">
+        <h4>Views &amp; Templates</h4>
+        <p>Template engine, layouts, sections, ViewBag, and cached rendering.</p>
+    </a>
+</div>
+
+<h3>Security</h3>
+<div class="doc-index-grid">
+    <a href="/docs/security" class="doc-index-card">
+        <h4>Security &amp; Authentication</h4>
+        <p>JWT authentication, OIDC/OAuth2/local providers, and authorization middleware.</p>
+    </a>
+</div>
+
+<h2>Requirements</h2>
+<table>
+    <tr><th>Dependency</th><th>Version</th><th>Purpose</th></tr>
+    <tr><td>PHP</td><td>8.2+</td><td>Language runtime</td></tr>
+    <tr><td>PDO extension</td><td>any</td><td>Database access</td></tr>
+    <tr><td>firebase/php-jwt</td><td>^6.0</td><td>JWT encoding and decoding</td></tr>
+</table>

@@ -1,0 +1,163 @@
+<section class="hero">
+    <div class="hero-glow"></div>
+    <div class="hero-icon">
+        <svg viewBox="0 0 3125 1875" fill-rule="evenodd">
+            <path d="M983.632,984l-871.984,-872.312l0,1571.75l454.496,0l0,-493.663l417.488,417.923l0,-623.695Z" fill="#ff0082"/>
+            <path d="M983.01,984l871.983,-872.312l0,1571.75l-454.496,0l0,-493.663l-417.487,417.923l0,-623.695Z" fill="#49216d"/>
+            <path d="M2336.05,514.918l0,765.288c211.187,0 382.644,-171.457 382.644,-382.644c0,-211.187 -171.457,-382.644 -382.644,-382.644Z" fill="#009dd9"/>
+        </svg>
+    </div>
+    <h1>A modern PHP framework<br>built for clarity, not magic.</h1>
+    <p class="hero-sub">
+        CQRS data access, JWT authentication, auto-wiring dependency injection, a composable middleware pipeline,
+        attribute-based validation, structured error handling, and console tools &mdash; all with explicit,
+        traceable code.
+    </p>
+    <div class="hero-actions">
+        <a href="/docs/getting-started" class="btn btn-primary btn-lg">Get Started</a>
+        <a href="/docs" class="btn btn-outline btn-lg">Read the Docs</a>
+        <a href="https://github.com/melodic-dev/melodic-php" class="btn btn-outline btn-lg" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <div class="hero-version">
+        <span class="badge badge-accent">PHP 8.2+</span>
+        <span class="badge badge-accent">MIT License</span>
+    </div>
+</section>
+
+<section class="features-section">
+    <h2 class="section-heading">Everything you need, nothing you don't</h2>
+    <p class="section-sub">A focused set of tools for building modern PHP applications with clear, predictable patterns.</p>
+    <div class="features">
+        <div class="feature-card">
+            <h3>CQRS Data Access</h3>
+            <p>Separate Query and Command objects keep reads and writes distinct. No ORM magic, no hidden SQL &mdash; every data path is explicit and traceable through DbContext.</p>
+        </div>
+        <div class="feature-card">
+            <h3>Multi-Provider Auth</h3>
+            <p>OIDC, OAuth2, and local username/password authentication with JWT tokens. Validate tokens, extract claims, and check entitlements through a clean UserContext API.</p>
+        </div>
+        <div class="feature-card">
+            <h3>DI Container</h3>
+            <p>Auto-wiring container resolves constructor dependencies from type hints. Interface bindings, singletons, and service providers for modular registration.</p>
+        </div>
+        <div class="feature-card">
+            <h3>Middleware Pipeline</h3>
+            <p>PSR-15-style composable middleware for cross-cutting concerns. CORS, authentication, authorization, body parsing &mdash; stack them in any order.</p>
+        </div>
+        <div class="feature-card">
+            <h3>MVC Views</h3>
+            <p>Template engine with layouts, named sections, and ViewBag for passing data. Pure PHP templates &mdash; no new syntax to learn, with optional view caching.</p>
+        </div>
+        <div class="feature-card">
+            <h3>Modern PHP</h3>
+            <p>PHP 8.2+ features throughout: enums, readonly properties, constructor promotion, match expressions, named arguments, and union types.</p>
+        </div>
+        <div class="feature-card">
+            <h3>Validation</h3>
+            <p>Attribute-based validation rules on DTOs. Declare constraints directly on properties and validate incoming data with clear, structured error responses.</p>
+        </div>
+        <div class="feature-card">
+            <h3>Error Handling</h3>
+            <p>Centralized ExceptionHandler with automatic JSON or HTML response detection. Debug mode with stack traces in development, clean messages in production.</p>
+        </div>
+        <div class="feature-card">
+            <h3>Console Tools</h3>
+            <p>CLI commands for common tasks: route:list, cache:clear, view:clear, and custom commands. Build task runners and maintenance scripts with structured output.</p>
+        </div>
+    </div>
+</section>
+
+<section class="code-section">
+    <h2 class="section-heading">Up and running in minutes</h2>
+    <p class="section-sub">A complete application bootstrap in a single file.</p>
+    <div class="code-window">
+        <div class="code-chrome">
+            <span class="code-dot code-dot-red"></span>
+            <span class="code-dot code-dot-yellow"></span>
+            <span class="code-dot code-dot-green"></span>
+            <span class="code-filename">public/index.php</span>
+        </div>
+        <pre><code>&lt;?php
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use Melodic\Core\Application;
+use Melodic\Http\Middleware\CorsMiddleware;
+use Melodic\Security\AuthenticationMiddleware;
+
+$app = new Application(dirname(__DIR__));
+$app-&gt;loadConfig('config/config.json');
+
+// Register service providers
+$app-&gt;services(function ($container) {
+    $container-&gt;register(new AppServiceProvider());
+});
+
+// Add middleware
+$app-&gt;addMiddleware(new CorsMiddleware($corsConfig));
+$app-&gt;addMiddleware(new AuthenticationMiddleware($jwtValidator));
+
+// Define routes
+$app-&gt;routes(function ($router) {
+    $router-&gt;get('/', HomeController::class, 'index');
+    $router-&gt;apiResource('/api/users', UserController::class);
+});
+
+$app-&gt;run();</code></pre>
+    </div>
+</section>
+
+<section class="arch-section">
+    <h2 class="section-heading">Predictable request lifecycle</h2>
+    <p class="section-sub">Every request follows the same path. No surprises, no hidden behavior.</p>
+    <div class="arch-flow">
+        <span class="arch-step">HTTP Request</span>
+        <span class="arch-arrow">&rarr;</span>
+        <span class="arch-step">Middleware</span>
+        <span class="arch-arrow">&rarr;</span>
+        <span class="arch-step">Router</span>
+        <span class="arch-arrow">&rarr;</span>
+        <span class="arch-step">Controller</span>
+        <span class="arch-arrow">&rarr;</span>
+        <span class="arch-step">Service</span>
+        <span class="arch-arrow">&rarr;</span>
+        <span class="arch-step">Query/Command</span>
+    </div>
+</section>
+
+<section class="ecosystem-section">
+    <h2 class="section-heading">A growing ecosystem</h2>
+    <p class="section-sub">Documentation, tutorials, and tooling to support your projects.</p>
+    <div class="ecosystem-grid">
+        <div class="ecosystem-card">
+            <h3>Documentation</h3>
+            <p>18 pages covering every framework feature &mdash; from configuration and routing to security, caching, and console commands.</p>
+        </div>
+        <div class="ecosystem-card">
+            <h3>Tutorials</h3>
+            <p>Step-by-step guides from hello world to JWT authentication. Learn the framework by building real applications.</p>
+        </div>
+        <div class="ecosystem-card">
+            <h3>Service Providers</h3>
+            <p>Modular packages for authentication, logging, events, and caching. Register what you need, skip what you don't.</p>
+        </div>
+        <div class="ecosystem-card">
+            <h3>Test Doubles</h3>
+            <p>ArraySession, ArrayCache, and NullLogger for easy testing. Swap production services for in-memory implementations without configuration.</p>
+        </div>
+    </div>
+    <div style="text-align: center; padding: 1rem 0;">
+        <div class="dogfood-badge">
+            <strong>php.melodic.dev</strong> is built with Melodic
+        </div>
+    </div>
+</section>
+
+<section class="cta-section">
+    <h2>Ready to build something?</h2>
+    <p>Start with the getting started guide, explore the documentation, or browse the source on GitHub.</p>
+    <div class="cta-links">
+        <a href="/docs/getting-started" class="btn btn-primary btn-lg">Get Started</a>
+        <a href="/docs" class="btn btn-outline btn-lg">Documentation</a>
+        <a href="https://github.com/melodic-dev/melodic-php" class="btn btn-outline btn-lg" target="_blank" rel="noopener">GitHub</a>
+    </div>
+</section>

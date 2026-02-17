@@ -1,0 +1,366 @@
+<h1>Logging</h1>
+<p>Melodic includes a PSR-3-style logging system with daily file rotation, message interpolation, exception formatting, and configurable severity filtering. The logger is designed to never crash your application &mdash; if writing fails, the error is silently swallowed.</p>
+
+<h2>LogLevel Enum</h2>
+<p>The <code>Melodic\Log\LogLevel</code> backed enum defines eight severity levels. Each level has a numeric severity where lower numbers indicate higher urgency. The enum is backed by lowercase string values.</p>
+
+<table>
+    <tr>
+        <th>Level</th>
+        <th>Value</th>
+        <th>Severity</th>
+        <th>Description</th>
+    </tr>
+    <tr>
+        <td><code>EMERGENCY</code></td>
+        <td><code>'emergency'</code></td>
+        <td>0</td>
+        <td>System is unusable</td>
+    </tr>
+    <tr>
+        <td><code>ALERT</code></td>
+        <td><code>'alert'</code></td>
+        <td>1</td>
+        <td>Immediate action required</td>
+    </tr>
+    <tr>
+        <td><code>CRITICAL</code></td>
+        <td><code>'critical'</code></td>
+        <td>2</td>
+        <td>Critical conditions</td>
+    </tr>
+    <tr>
+        <td><code>ERROR</code></td>
+        <td><code>'error'</code></td>
+        <td>3</td>
+        <td>Runtime errors</td>
+    </tr>
+    <tr>
+        <td><code>WARNING</code></td>
+        <td><code>'warning'</code></td>
+        <td>4</td>
+        <td>Exceptional occurrences that are not errors</td>
+    </tr>
+    <tr>
+        <td><code>NOTICE</code></td>
+        <td><code>'notice'</code></td>
+        <td>5</td>
+        <td>Normal but significant events</td>
+    </tr>
+    <tr>
+        <td><code>INFO</code></td>
+        <td><code>'info'</code></td>
+        <td>6</td>
+        <td>Informational messages</td>
+    </tr>
+    <tr>
+        <td><code>DEBUG</code></td>
+        <td><code>'debug'</code></td>
+        <td>7</td>
+        <td>Detailed debug information</td>
+    </tr>
+</table>
+
+<div class="callout callout-info">
+    <p><strong>Lower severity number = higher urgency.</strong> EMERGENCY (0) is the most urgent; DEBUG (7) is the least. When you set a minimum level, only messages with a severity number less than or equal to that level's severity are written.</p>
+</div>
+
+<h3>Parsing Levels</h3>
+<p>Use the static <code>parse()</code> method to convert a string to a <code>LogLevel</code> case. Parsing is case-insensitive. An invalid string throws a <code>ValueError</code>.</p>
+
+<pre><code>&lt;?php
+use Melodic\Log\LogLevel;
+
+$level = LogLevel::parse('warning');   // LogLevel::WARNING
+$level = LogLevel::parse('WARNING');   // LogLevel::WARNING
+$level = LogLevel::parse('invalid');   // throws ValueError</code></pre>
+
+<h2>LoggerInterface</h2>
+<p>The <code>Melodic\Log\LoggerInterface</code> provides a convenience method for each severity level plus a generic <code>log()</code> method that accepts a <code>LogLevel</code> enum value.</p>
+
+<table>
+    <tr>
+        <th>Method</th>
+        <th>Signature</th>
+    </tr>
+    <tr>
+        <td><code>emergency()</code></td>
+        <td><code>emergency(string $message, array $context = []): void</code></td>
+    </tr>
+    <tr>
+        <td><code>alert()</code></td>
+        <td><code>alert(string $message, array $context = []): void</code></td>
+    </tr>
+    <tr>
+        <td><code>critical()</code></td>
+        <td><code>critical(string $message, array $context = []): void</code></td>
+    </tr>
+    <tr>
+        <td><code>error()</code></td>
+        <td><code>error(string $message, array $context = []): void</code></td>
+    </tr>
+    <tr>
+        <td><code>warning()</code></td>
+        <td><code>warning(string $message, array $context = []): void</code></td>
+    </tr>
+    <tr>
+        <td><code>notice()</code></td>
+        <td><code>notice(string $message, array $context = []): void</code></td>
+    </tr>
+    <tr>
+        <td><code>info()</code></td>
+        <td><code>info(string $message, array $context = []): void</code></td>
+    </tr>
+    <tr>
+        <td><code>debug()</code></td>
+        <td><code>debug(string $message, array $context = []): void</code></td>
+    </tr>
+    <tr>
+        <td><code>log()</code></td>
+        <td><code>log(LogLevel $level, string $message, array $context = []): void</code></td>
+    </tr>
+</table>
+
+<p>Every convenience method delegates to <code>log()</code> with the appropriate <code>LogLevel</code>. The <code>$context</code> array supports placeholder interpolation and exception formatting.</p>
+
+<h2>FileLogger</h2>
+<p>The <code>Melodic\Log\FileLogger</code> is the default production logger. It writes log entries to daily-rotated files with automatic directory creation, message interpolation, and exception stack trace formatting.</p>
+
+<h3>Constructor</h3>
+<pre><code>&lt;?php
+use Melodic\Log\FileLogger;
+use Melodic\Log\LogLevel;
+
+// Log everything (DEBUG and above)
+$logger = new FileLogger('/var/log/myapp');
+
+// Only log WARNING and more severe
+$logger = new FileLogger('/var/log/myapp', LogLevel::WARNING);</code></pre>
+
+<table>
+    <tr>
+        <th>Parameter</th>
+        <th>Type</th>
+        <th>Default</th>
+        <th>Description</th>
+    </tr>
+    <tr>
+        <td><code>$logDirectory</code></td>
+        <td><code>string</code></td>
+        <td>&mdash;</td>
+        <td>Absolute path to the directory where log files are written</td>
+    </tr>
+    <tr>
+        <td><code>$minLevel</code></td>
+        <td><code>LogLevel</code></td>
+        <td><code>LogLevel::DEBUG</code></td>
+        <td>Minimum severity level; messages less severe are ignored</td>
+    </tr>
+</table>
+
+<h3>Daily File Rotation</h3>
+<p>Each day's log entries are written to a file named <code>melodic-YYYY-MM-DD.log</code>. A new file is created automatically when the date changes. There is no maximum file count &mdash; you manage cleanup externally (e.g., with <code>logrotate</code> or a cron job).</p>
+
+<pre><code>logs/
+  melodic-2026-02-15.log
+  melodic-2026-02-16.log
+  melodic-2026-02-17.log</code></pre>
+
+<h3>Message Interpolation</h3>
+<p>Context values are interpolated into the log message using <code>{placeholder}</code> syntax. Any scalar value or object with a <code>__toString()</code> method can be interpolated. The <code>exception</code> key is reserved and skipped during interpolation.</p>
+
+<pre><code>&lt;?php
+$logger-&gt;info('User {user} logged in from {ip}', [
+    'user' =&gt; 'alice',
+    'ip'   =&gt; '192.168.1.10',
+]);
+
+// Output: [2026-02-17 14:30:00] INFO: User alice logged in from 192.168.1.10</code></pre>
+
+<h3>Exception Formatting</h3>
+<p>When the context array contains an <code>exception</code> key with a <code>Throwable</code> value, the logger appends the exception class, message, file/line, and full stack trace to the log entry.</p>
+
+<pre><code>&lt;?php
+try {
+    $this-&gt;processPayment($order);
+} catch (\Throwable $e) {
+    $logger-&gt;error('Payment failed for order {order_id}', [
+        'order_id'  =&gt; $order-&gt;id,
+        'exception' =&gt; $e,
+    ]);
+}</code></pre>
+
+<p>This produces a log entry like:</p>
+
+<pre><code>[2026-02-17 14:30:00] ERROR: Payment failed for order 1234
+  Exception: App\Exceptions\PaymentException
+  Message: Insufficient funds
+  At: /var/www/app/Services/PaymentService.php:47
+  Trace:
+    #0 /var/www/app/Controllers/OrderController.php(32): ...
+    #1 /var/www/vendor/melodic/framework/src/Routing/RoutingMiddleware.php(45): ...</code></pre>
+
+<h3>Minimum Level Filtering</h3>
+<p>When a minimum level is set, messages with a severity number greater than the minimum are silently discarded. Severity is compared numerically: lower number = more severe.</p>
+
+<pre><code>&lt;?php
+// Only WARNING (4), ERROR (3), CRITICAL (2), ALERT (1), and EMERGENCY (0)
+$logger = new FileLogger('/var/log/myapp', LogLevel::WARNING);
+
+$logger-&gt;warning('Disk space low');   // Written (severity 4 &lt;= 4)
+$logger-&gt;error('Disk full');          // Written (severity 3 &lt;= 4)
+$logger-&gt;info('Request served');      // Ignored (severity 6 &gt; 4)
+$logger-&gt;debug('Query took 12ms');    // Ignored (severity 7 &gt; 4)</code></pre>
+
+<div class="callout callout-warning">
+    <p><strong>Silent failure.</strong> The <code>FileLogger</code> catches all exceptions during the write operation. If the log directory is not writable or the disk is full, the logger fails silently rather than crashing your application.</p>
+</div>
+
+<h3>Directory Auto-Creation</h3>
+<p>If the log directory does not exist when a message is written, <code>FileLogger</code> creates it recursively with <code>0755</code> permissions. This happens inside the same try/catch that protects against write failures.</p>
+
+<h2>NullLogger</h2>
+<p>The <code>Melodic\Log\NullLogger</code> implements <code>LoggerInterface</code> with all methods as no-ops. Use it in tests or when you want to disable logging entirely without changing any consuming code.</p>
+
+<pre><code>&lt;?php
+use Melodic\Log\NullLogger;
+
+$logger = new NullLogger();
+$logger-&gt;error('This goes nowhere');  // No-op
+$logger-&gt;debug('Neither does this');  // No-op</code></pre>
+
+<div class="callout callout-tip">
+    <p><strong>Testing tip.</strong> Bind <code>NullLogger</code> in your test container to suppress log output during test runs while still verifying that your services accept a <code>LoggerInterface</code> dependency.</p>
+</div>
+
+<h2>LoggingServiceProvider</h2>
+<p>The <code>Melodic\Log\LoggingServiceProvider</code> reads configuration values and registers a <code>FileLogger</code> singleton. It pulls the log directory and minimum level from your JSON configuration file.</p>
+
+<pre><code>&lt;?php
+use Melodic\Core\Application;
+use Melodic\Log\LoggingServiceProvider;
+
+$app = new Application(__DIR__);
+$app-&gt;loadConfig('config/config.json');
+
+$app-&gt;services(function ($container) {
+    (new LoggingServiceProvider())-&gt;register($container);
+});
+
+$app-&gt;run();</code></pre>
+
+<h3>Configuration Keys</h3>
+<table>
+    <tr>
+        <th>Key</th>
+        <th>Type</th>
+        <th>Default</th>
+        <th>Description</th>
+    </tr>
+    <tr>
+        <td><code>logging.path</code></td>
+        <td><code>string</code></td>
+        <td><code>{basePath}/logs</code></td>
+        <td>Absolute path to the log directory</td>
+    </tr>
+    <tr>
+        <td><code>logging.level</code></td>
+        <td><code>string</code></td>
+        <td><code>'debug'</code></td>
+        <td>Minimum log level (case-insensitive, e.g. <code>'warning'</code>, <code>'error'</code>)</td>
+    </tr>
+</table>
+
+<p>Example <code>config.json</code>:</p>
+
+<pre><code>{
+    "logging": {
+        "path": "/var/log/myapp",
+        "level": "warning"
+    }
+}</code></pre>
+
+<p>If <code>logging.path</code> is not set, the provider defaults to a <code>logs</code> directory inside your application's base path. If <code>logging.level</code> is not set, it defaults to <code>'debug'</code>, meaning all messages are logged.</p>
+
+<h3>How the Provider Works</h3>
+<p>The service provider registers a singleton factory that reads configuration at resolve time:</p>
+
+<pre><code>&lt;?php
+// Inside LoggingServiceProvider::register()
+$container-&gt;singleton(LoggerInterface::class, function (Container $c) {
+    $config = $c-&gt;get(Configuration::class);
+    $app    = $c-&gt;get(Application::class);
+
+    $path  = $config-&gt;get('logging.path') ?? $app-&gt;getBasePath() . '/logs';
+    $level = LogLevel::parse($config-&gt;get('logging.level', 'debug'));
+
+    return new FileLogger($path, $level);
+});</code></pre>
+
+<h2>Usage in Services and Controllers</h2>
+<p>Type-hint <code>LoggerInterface</code> in any constructor to receive the configured logger instance.</p>
+
+<pre><code>&lt;?php
+use Melodic\Log\LoggerInterface;
+use Melodic\Service\Service;
+
+class OrderService extends Service
+{
+    public function __construct(
+        private readonly LoggerInterface $logger,
+    ) {}
+
+    public function placeOrder(array $items): Order
+    {
+        $this-&gt;logger-&gt;info('Placing order with {count} items', [
+            'count' =&gt; count($items),
+        ]);
+
+        try {
+            $order = $this-&gt;createOrder($items);
+            $this-&gt;logger-&gt;info('Order {id} placed successfully', [
+                'id' =&gt; $order-&gt;id,
+            ]);
+            return $order;
+        } catch (\Throwable $e) {
+            $this-&gt;logger-&gt;error('Order placement failed', [
+                'exception' =&gt; $e,
+            ]);
+            throw $e;
+        }
+    }
+}</code></pre>
+
+<h2>Class Reference</h2>
+<table>
+    <tr>
+        <th>Class</th>
+        <th>Namespace</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>LogLevel</code></td>
+        <td><code>Melodic\Log</code></td>
+        <td>Backed enum defining eight severity levels with <code>severity()</code> and <code>parse()</code></td>
+    </tr>
+    <tr>
+        <td><code>LoggerInterface</code></td>
+        <td><code>Melodic\Log</code></td>
+        <td>Contract with convenience methods for each level plus generic <code>log()</code></td>
+    </tr>
+    <tr>
+        <td><code>FileLogger</code></td>
+        <td><code>Melodic\Log</code></td>
+        <td>Daily-rotating file logger with interpolation and exception formatting</td>
+    </tr>
+    <tr>
+        <td><code>NullLogger</code></td>
+        <td><code>Melodic\Log</code></td>
+        <td>No-op logger for testing or disabling logging</td>
+    </tr>
+    <tr>
+        <td><code>LoggingServiceProvider</code></td>
+        <td><code>Melodic\Log</code></td>
+        <td>Reads config and registers <code>FileLogger</code> as a singleton</td>
+    </tr>
+</table>

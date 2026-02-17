@@ -1,0 +1,566 @@
+<h1>Build a REST API</h1>
+<p>In this tutorial you will build a complete task management REST API from scratch. You will create a model, queries, commands, a service, and a controller &mdash; following the full Melodic request lifecycle.</p>
+
+<div class="callout callout-info">
+    <p><strong>What you will build:</strong> A JSON API with endpoints to list, show, create, update, and delete tasks. By the end you will have a working CRUD API you can test with curl.</p>
+</div>
+
+<h2>Step 1: Project Setup</h2>
+
+<p>Start by creating a new project directory and installing the framework:</p>
+
+<pre><code>mkdir task-api &amp;&amp; cd task-api
+composer require melodic/framework</code></pre>
+
+<p>Create the directory structure:</p>
+
+<pre><code>mkdir -p public config src/{Models,Queries,Commands,Services,Controllers}</code></pre>
+
+<p>Create a minimal configuration file at <code>config/config.json</code>:</p>
+
+<pre><code>{
+    "app": {
+        "name": "Task API",
+        "debug": true
+    },
+    "database": {
+        "dsn": "sqlite:database.sqlite",
+        "username": null,
+        "password": null
+    }
+}</code></pre>
+
+<p>Now create the application entry point at <code>public/index.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use Melodic\Core\Application;
+use Melodic\Http\Middleware\JsonBodyParserMiddleware;
+
+$app = new Application(dirname(__DIR__));
+$app-&gt;loadConfig('config/config.json');
+
+// Parse JSON request bodies automatically
+$app-&gt;addMiddleware(new JsonBodyParserMiddleware());
+
+// Services and routes will be added in later steps
+
+$app-&gt;run();</code></pre>
+
+<div class="callout callout-tip">
+    <p><strong>Tip:</strong> The <code>Application</code> constructor takes the project root path. Using <code>dirname(__DIR__)</code> from the <code>public/</code> directory points to the project root.</p>
+</div>
+
+<h2>Step 2: Create the Task Model</h2>
+
+<p>Models in Melodic extend <code>Melodic\Data\Model</code>, which provides <code>fromArray()</code> for hydration from database rows and <code>toArray()</code> for serialization.</p>
+
+<p>Create <code>src/Models/Task.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+use Melodic\Data\Model;
+
+class Task extends Model
+{
+    public int $id;
+    public string $title;
+    public string $description;
+    public bool $completed;
+    public string $created_at;
+}</code></pre>
+
+<p>Each public property maps to a database column. When <code>DbContext</code> fetches a row, it calls <code>Task::fromArray($row)</code> to populate these properties automatically.</p>
+
+<h2>Step 3: Create Queries and Commands</h2>
+
+<p>Melodic uses the CQRS pattern for data access. Queries read data, commands write data. Each is a small class that owns its SQL and knows how to execute itself.</p>
+
+<h3>GetAllTasksQuery</h3>
+
+<p>Create <code>src/Queries/GetAllTasksQuery.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Queries;
+
+use App\Models\Task;
+use Melodic\Data\DbContextInterface;
+use Melodic\Data\QueryInterface;
+
+class GetAllTasksQuery implements QueryInterface
+{
+    private readonly string $sql;
+
+    public function __construct()
+    {
+        $this-&gt;sql = "SELECT * FROM tasks ORDER BY created_at DESC";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    /**
+     * @return Task[]
+     */
+    public function execute(DbContextInterface $context): array
+    {
+        return $context-&gt;query(Task::class, $this-&gt;sql);
+    }
+}</code></pre>
+
+<h3>GetTaskByIdQuery</h3>
+
+<p>Create <code>src/Queries/GetTaskByIdQuery.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Queries;
+
+use App\Models\Task;
+use Melodic\Data\DbContextInterface;
+use Melodic\Data\QueryInterface;
+
+class GetTaskByIdQuery implements QueryInterface
+{
+    private readonly string $sql;
+
+    public function __construct(
+        private readonly int $id,
+    ) {
+        $this-&gt;sql = "SELECT * FROM tasks WHERE id = :id";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    public function execute(DbContextInterface $context): ?Task
+    {
+        return $context-&gt;queryFirst(Task::class, $this-&gt;sql, ['id' =&gt; $this-&gt;id]);
+    }
+}</code></pre>
+
+<h3>CreateTaskCommand</h3>
+
+<p>Create <code>src/Commands/CreateTaskCommand.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Commands;
+
+use Melodic\Data\CommandInterface;
+use Melodic\Data\DbContextInterface;
+
+class CreateTaskCommand implements CommandInterface
+{
+    private readonly string $sql;
+
+    public function __construct(
+        private readonly string $title,
+        private readonly string $description,
+    ) {
+        $this-&gt;sql = "INSERT INTO tasks (title, description, completed, created_at)
+                      VALUES (:title, :description, 0, datetime('now'))";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    public function execute(DbContextInterface $context): int
+    {
+        return $context-&gt;command($this-&gt;sql, [
+            'title' =&gt; $this-&gt;title,
+            'description' =&gt; $this-&gt;description,
+        ]);
+    }
+}</code></pre>
+
+<h3>UpdateTaskCommand</h3>
+
+<p>Create <code>src/Commands/UpdateTaskCommand.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Commands;
+
+use Melodic\Data\CommandInterface;
+use Melodic\Data\DbContextInterface;
+
+class UpdateTaskCommand implements CommandInterface
+{
+    private readonly string $sql;
+
+    public function __construct(
+        private readonly int $id,
+        private readonly string $title,
+        private readonly string $description,
+        private readonly bool $completed,
+    ) {
+        $this-&gt;sql = "UPDATE tasks SET title = :title, description = :description,
+                      completed = :completed WHERE id = :id";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    public function execute(DbContextInterface $context): int
+    {
+        return $context-&gt;command($this-&gt;sql, [
+            'id' =&gt; $this-&gt;id,
+            'title' =&gt; $this-&gt;title,
+            'description' =&gt; $this-&gt;description,
+            'completed' =&gt; $this-&gt;completed ? 1 : 0,
+        ]);
+    }
+}</code></pre>
+
+<h3>DeleteTaskCommand</h3>
+
+<p>Create <code>src/Commands/DeleteTaskCommand.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Commands;
+
+use Melodic\Data\CommandInterface;
+use Melodic\Data\DbContextInterface;
+
+class DeleteTaskCommand implements CommandInterface
+{
+    private readonly string $sql;
+
+    public function __construct(
+        private readonly int $id,
+    ) {
+        $this-&gt;sql = "DELETE FROM tasks WHERE id = :id";
+    }
+
+    public function getSql(): string
+    {
+        return $this-&gt;sql;
+    }
+
+    public function execute(DbContextInterface $context): int
+    {
+        return $context-&gt;command($this-&gt;sql, ['id' =&gt; $this-&gt;id]);
+    }
+}</code></pre>
+
+<div class="callout callout-info">
+    <p><strong>Why separate classes?</strong> Each query and command is a single-purpose object. The SQL lives next to the execution logic, making it easy to find, test, and reuse. There is no hidden query builder or ORM magic.</p>
+</div>
+
+<h2>Step 4: Create the TaskService</h2>
+
+<p>The service layer sits between controllers and data access. It instantiates queries and commands, passing them the <code>DbContext</code> for execution.</p>
+
+<p>Create <code>src/Services/TaskService.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Services;
+
+use App\Commands\CreateTaskCommand;
+use App\Commands\DeleteTaskCommand;
+use App\Commands\UpdateTaskCommand;
+use App\Models\Task;
+use App\Queries\GetAllTasksQuery;
+use App\Queries\GetTaskByIdQuery;
+use Melodic\Service\Service;
+
+class TaskService extends Service
+{
+    /**
+     * @return Task[]
+     */
+    public function getAll(): array
+    {
+        return (new GetAllTasksQuery())-&gt;execute($this-&gt;context);
+    }
+
+    public function getById(int $id): ?Task
+    {
+        return (new GetTaskByIdQuery($id))-&gt;execute($this-&gt;context);
+    }
+
+    public function create(string $title, string $description): int
+    {
+        (new CreateTaskCommand($title, $description))-&gt;execute($this-&gt;context);
+
+        return $this-&gt;context-&gt;lastInsertId();
+    }
+
+    public function update(int $id, string $title, string $description, bool $completed): int
+    {
+        return (new UpdateTaskCommand($id, $title, $description, $completed))
+            -&gt;execute($this-&gt;context);
+    }
+
+    public function delete(int $id): int
+    {
+        return (new DeleteTaskCommand($id))-&gt;execute($this-&gt;context);
+    }
+}</code></pre>
+
+<p>The <code>Service</code> base class provides the <code>$this-&gt;context</code> property (a <code>DbContextInterface</code>) through its constructor. The DI container will inject it automatically.</p>
+
+<h2>Step 5: Create the TaskApiController</h2>
+
+<p>The controller handles HTTP concerns: reading request data, calling the service, and returning responses. It extends <code>Controller</code> which provides helpers like <code>json()</code>, <code>created()</code>, <code>noContent()</code>, <code>notFound()</code>, and <code>badRequest()</code>.</p>
+
+<p>Create <code>src/Controllers/TaskApiController.php</code>:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+namespace App\Controllers;
+
+use App\Services\TaskService;
+use Melodic\Controller\Controller;
+use Melodic\Http\Response;
+
+class TaskApiController extends Controller
+{
+    public function __construct(
+        private readonly TaskService $taskService,
+    ) {}
+
+    public function index(): Response
+    {
+        $tasks = $this-&gt;taskService-&gt;getAll();
+
+        return $this-&gt;json(array_map(fn($t) =&gt; $t-&gt;toArray(), $tasks));
+    }
+
+    public function show(int $id): Response
+    {
+        $task = $this-&gt;taskService-&gt;getById($id);
+
+        if ($task === null) {
+            return $this-&gt;notFound(['error' =&gt; 'Task not found']);
+        }
+
+        return $this-&gt;json($task-&gt;toArray());
+    }
+
+    public function store(): Response
+    {
+        $title = $this-&gt;request-&gt;body('title');
+        $description = $this-&gt;request-&gt;body('description', '');
+
+        if (empty($title)) {
+            return $this-&gt;badRequest(['error' =&gt; 'Title is required']);
+        }
+
+        $id = $this-&gt;taskService-&gt;create($title, $description);
+        $task = $this-&gt;taskService-&gt;getById($id);
+
+        return $this-&gt;created($task-&gt;toArray(), "/api/tasks/{$id}");
+    }
+
+    public function update(int $id): Response
+    {
+        $existing = $this-&gt;taskService-&gt;getById($id);
+
+        if ($existing === null) {
+            return $this-&gt;notFound(['error' =&gt; 'Task not found']);
+        }
+
+        $title = $this-&gt;request-&gt;body('title', $existing-&gt;title);
+        $description = $this-&gt;request-&gt;body('description', $existing-&gt;description);
+        $completed = $this-&gt;request-&gt;body('completed', $existing-&gt;completed);
+
+        $this-&gt;taskService-&gt;update($id, $title, $description, (bool) $completed);
+
+        $task = $this-&gt;taskService-&gt;getById($id);
+
+        return $this-&gt;json($task-&gt;toArray());
+    }
+
+    public function destroy(int $id): Response
+    {
+        $existing = $this-&gt;taskService-&gt;getById($id);
+
+        if ($existing === null) {
+            return $this-&gt;notFound(['error' =&gt; 'Task not found']);
+        }
+
+        $this-&gt;taskService-&gt;delete($id);
+
+        return $this-&gt;noContent();
+    }
+}</code></pre>
+
+<div class="callout callout-tip">
+    <p><strong>Tip:</strong> Route parameters like <code>{id}</code> are automatically passed as method arguments. The framework matches the parameter name to the method argument name.</p>
+</div>
+
+<h2>Step 6: Wire Up Services and Routes</h2>
+
+<p>Return to <code>public/index.php</code> and register the DI bindings and routes. Here is the complete file:</p>
+
+<pre><code>&lt;?php
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use App\Controllers\TaskApiController;
+use App\Services\TaskService;
+use Melodic\Core\Application;
+use Melodic\Data\DbContext;
+use Melodic\Data\DbContextInterface;
+use Melodic\Http\Middleware\JsonBodyParserMiddleware;
+
+$app = new Application(dirname(__DIR__));
+$app-&gt;loadConfig('config/config.json');
+
+$app-&gt;addMiddleware(new JsonBodyParserMiddleware());
+
+// Register services in the DI container
+$app-&gt;services(function ($container) use ($app) {
+    // Register DbContext as a singleton
+    $container-&gt;singleton(DbContextInterface::class, function () use ($app) {
+        $dsn = $app-&gt;config('database.dsn');
+        $pdo = new PDO($dsn);
+        $pdo-&gt;setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+        return new DbContext($pdo);
+    });
+
+    // Bind TaskService (auto-wired via DbContextInterface)
+    $container-&gt;bind(TaskService::class, TaskService::class);
+});
+
+// Register routes
+$app-&gt;routes(function ($router) {
+    $router-&gt;apiResource('/api/tasks', TaskApiController::class);
+});
+
+$app-&gt;run();</code></pre>
+
+<p>The <code>apiResource()</code> call registers five routes automatically:</p>
+
+<table>
+    <tr><th>Method</th><th>Path</th><th>Action</th></tr>
+    <tr><td>GET</td><td>/api/tasks</td><td>index</td></tr>
+    <tr><td>GET</td><td>/api/tasks/{id}</td><td>show</td></tr>
+    <tr><td>POST</td><td>/api/tasks</td><td>store</td></tr>
+    <tr><td>PUT</td><td>/api/tasks/{id}</td><td>update</td></tr>
+    <tr><td>DELETE</td><td>/api/tasks/{id}</td><td>destroy</td></tr>
+</table>
+
+<h2>Step 7: Create the Database and Test</h2>
+
+<p>Create the SQLite database with a tasks table:</p>
+
+<pre><code>sqlite3 database.sqlite "CREATE TABLE tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    completed INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL
+);"</code></pre>
+
+<p>Start the built-in PHP server:</p>
+
+<pre><code>php -S localhost:8080 -t public</code></pre>
+
+<p>Now test each endpoint with curl:</p>
+
+<h3>Create a task</h3>
+
+<pre><code>curl -X POST http://localhost:8080/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Learn Melodic", "description": "Work through the tutorials"}'
+
+# Response: 201 Created
+# {"id":1,"title":"Learn Melodic","description":"Work through the tutorials","completed":false,"created_at":"2026-02-17 12:00:00"}</code></pre>
+
+<h3>List all tasks</h3>
+
+<pre><code>curl http://localhost:8080/api/tasks
+
+# Response: 200 OK
+# [{"id":1,"title":"Learn Melodic","description":"Work through the tutorials","completed":false,"created_at":"..."}]</code></pre>
+
+<h3>Get a single task</h3>
+
+<pre><code>curl http://localhost:8080/api/tasks/1
+
+# Response: 200 OK
+# {"id":1,"title":"Learn Melodic","description":"Work through the tutorials","completed":false,"created_at":"..."}</code></pre>
+
+<h3>Update a task</h3>
+
+<pre><code>curl -X PUT http://localhost:8080/api/tasks/1 \
+  -H "Content-Type: application/json" \
+  -d '{"completed": true}'
+
+# Response: 200 OK
+# {"id":1,"title":"Learn Melodic","description":"Work through the tutorials","completed":true,"created_at":"..."}</code></pre>
+
+<h3>Delete a task</h3>
+
+<pre><code>curl -X DELETE http://localhost:8080/api/tasks/1
+
+# Response: 204 No Content</code></pre>
+
+<div class="callout callout-warning">
+    <p><strong>404 handling:</strong> Requesting a task that does not exist returns <code>{"error": "Task not found"}</code> with a 404 status code. The controller checks for null before proceeding.</p>
+</div>
+
+<h2>What You Built</h2>
+
+<p>Your project now follows the full Melodic architecture:</p>
+
+<pre><code>HTTP Request &rarr; JsonBodyParser &rarr; Router &rarr; TaskApiController &rarr; TaskService &rarr; Query/Command &rarr; SQLite</code></pre>
+
+<p>Here is a summary of every file you created:</p>
+
+<table>
+    <tr><th>File</th><th>Purpose</th></tr>
+    <tr><td><code>config/config.json</code></td><td>App and database configuration</td></tr>
+    <tr><td><code>public/index.php</code></td><td>Bootstrap, DI, and routing</td></tr>
+    <tr><td><code>src/Models/Task.php</code></td><td>Task data model</td></tr>
+    <tr><td><code>src/Queries/GetAllTasksQuery.php</code></td><td>Fetch all tasks</td></tr>
+    <tr><td><code>src/Queries/GetTaskByIdQuery.php</code></td><td>Fetch one task by ID</td></tr>
+    <tr><td><code>src/Commands/CreateTaskCommand.php</code></td><td>Insert a new task</td></tr>
+    <tr><td><code>src/Commands/UpdateTaskCommand.php</code></td><td>Update an existing task</td></tr>
+    <tr><td><code>src/Commands/DeleteTaskCommand.php</code></td><td>Delete a task</td></tr>
+    <tr><td><code>src/Services/TaskService.php</code></td><td>Business logic layer</td></tr>
+    <tr><td><code>src/Controllers/TaskApiController.php</code></td><td>HTTP endpoints</td></tr>
+</table>
+
+<div class="callout callout-tip">
+    <p><strong>Next steps:</strong> Try adding validation to the store and update actions using <a href="/docs/validation">Melodic's validation attributes</a>, or protect the API with <a href="/tutorials/adding-authentication">JWT authentication</a>.</p>
+</div>

@@ -1,0 +1,578 @@
+<h1>Configuration</h1>
+<p>Melodic uses a JSON configuration file loaded at bootstrap time. All framework settings &mdash; database, authentication, CORS, and custom application values &mdash; live in a single file accessed through dot-notation keys.</p>
+
+<h2>Config File Format</h2>
+
+<p>Configuration is stored as a standard JSON file, typically at <code>config/config.json</code> in your project root. Load it during bootstrap with:</p>
+
+<pre><code>$app = new Application(dirname(__DIR__));
+$app-&gt;loadConfig('config/config.json');</code></pre>
+
+<p>Relative paths are resolved from the base path passed to the <code>Application</code> constructor. You can also use an absolute path:</p>
+
+<pre><code>$app-&gt;loadConfig('/etc/my-app/config.json');</code></pre>
+
+<div class="callout callout-info">
+    <p><strong>Note:</strong> You can call <code>loadConfig()</code> multiple times. Each call deep-merges the new values into the existing configuration, so later files override earlier ones for the same keys.</p>
+</div>
+
+<h2>The Configuration Class</h2>
+
+<p>Under the hood, <code>loadConfig()</code> delegates to the <code>Melodic\Core\Configuration</code> class. This class is automatically registered in the DI container, so you can inject it into services and controllers.</p>
+
+<h3>Methods</h3>
+
+<table>
+    <tr><th>Method</th><th>Description</th></tr>
+    <tr>
+        <td><code>get(string $key, mixed $default = null): mixed</code></td>
+        <td>Retrieves a value using dot-notation. Walks nested arrays by splitting the key on <code>.</code> separators. Returns <code>$default</code> if any segment is missing.</td>
+    </tr>
+    <tr>
+        <td><code>set(string $key, mixed $value): void</code></td>
+        <td>Sets a value using dot-notation. Creates intermediate arrays as needed.</td>
+    </tr>
+    <tr>
+        <td><code>has(string $key): bool</code></td>
+        <td>Returns <code>true</code> if the key exists in the configuration tree.</td>
+    </tr>
+    <tr>
+        <td><code>all(): array</code></td>
+        <td>Returns the entire configuration as a nested associative array.</td>
+    </tr>
+    <tr>
+        <td><code>merge(array $data): void</code></td>
+        <td>Deep-merges an array into the existing configuration. Array values are merged recursively; scalar values are overwritten.</td>
+    </tr>
+    <tr>
+        <td><code>loadFile(string $path): void</code></td>
+        <td>Loads a JSON file from disk and merges it into the configuration. Throws <code>RuntimeException</code> if the file is missing or contains invalid JSON.</td>
+    </tr>
+</table>
+
+<h3>Dot-Notation Access</h3>
+
+<p>Dot-notation lets you reach into nested structures without manually traversing arrays:</p>
+
+<pre><code>// Given this JSON:
+// { "database": { "dsn": "sqlite::memory:" } }
+
+$dsn = $config-&gt;get('database.dsn');
+// Returns: "sqlite::memory:"
+
+$timeout = $config-&gt;get('database.timeout', 30);
+// Returns: 30 (default, since the key does not exist)</code></pre>
+
+<h2>Accessing Configuration</h2>
+
+<p>There are three ways to read configuration values, depending on where you are in the application.</p>
+
+<h3>From the Application Instance</h3>
+
+<p>The <code>$app-&gt;config()</code> method is a shortcut that delegates to the <code>Configuration</code> object:</p>
+
+<pre><code>// Read a single value
+$dsn = $app-&gt;config('database.dsn');
+
+// Read with a default
+$debug = $app-&gt;config('app.debug', false);
+
+// Get the entire Configuration object
+$config = $app-&gt;config();</code></pre>
+
+<h3>From a Service or Controller via DI</h3>
+
+<p>The <code>Configuration</code> class is registered as a singleton in the container. Inject it through your constructor:</p>
+
+<pre><code>&lt;?php
+
+use Melodic\Core\Configuration;
+
+class ReportService
+{
+    public function __construct(
+        private readonly Configuration $config,
+    ) {}
+
+    public function getReportLimit(): int
+    {
+        return (int) $this-&gt;config-&gt;get('reports.limit', 100);
+    }
+}</code></pre>
+
+<h3>Inside a Service Provider</h3>
+
+<p>Service providers receive the container, so you can resolve <code>Configuration</code> directly:</p>
+
+<pre><code>public function register(Container $container): void
+{
+    $container-&gt;singleton(MyService::class, function (Container $c) {
+        $config = $c-&gt;get(Configuration::class);
+        $apiKey = $config-&gt;get('integrations.api_key');
+        return new MyService($apiKey);
+    });
+}</code></pre>
+
+<h2>Config Reference</h2>
+
+<p>The following tables document every configuration key recognized by the framework.</p>
+
+<h3>Database</h3>
+
+<table>
+    <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    <tr>
+        <td><code>database.dsn</code></td>
+        <td>string</td>
+        <td>&mdash;</td>
+        <td>PDO data source name (e.g., <code>sqlite::memory:</code>, <code>mysql:host=localhost;dbname=app</code>)</td>
+    </tr>
+    <tr>
+        <td><code>database.username</code></td>
+        <td>string|null</td>
+        <td><code>null</code></td>
+        <td>Database username</td>
+    </tr>
+    <tr>
+        <td><code>database.password</code></td>
+        <td>string|null</td>
+        <td><code>null</code></td>
+        <td>Database password</td>
+    </tr>
+</table>
+
+<h3>Authentication &mdash; General</h3>
+
+<table>
+    <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    <tr>
+        <td><code>auth.api.enabled</code></td>
+        <td>bool</td>
+        <td><code>true</code></td>
+        <td>Enable API authentication (Bearer token validation on API routes)</td>
+    </tr>
+    <tr>
+        <td><code>auth.web.enabled</code></td>
+        <td>bool</td>
+        <td><code>true</code></td>
+        <td>Enable web authentication (cookie-based sessions for browser routes)</td>
+    </tr>
+    <tr>
+        <td><code>auth.loginPath</code></td>
+        <td>string</td>
+        <td><code>/auth/login</code></td>
+        <td>URL path for the login page</td>
+    </tr>
+    <tr>
+        <td><code>auth.callbackPath</code></td>
+        <td>string</td>
+        <td><code>/auth/callback</code></td>
+        <td>URL path for OAuth/OIDC callback handling</td>
+    </tr>
+    <tr>
+        <td><code>auth.postLoginRedirect</code></td>
+        <td>string</td>
+        <td><code>/</code></td>
+        <td>Where to redirect the user after successful login</td>
+    </tr>
+    <tr>
+        <td><code>auth.cookieName</code></td>
+        <td>string</td>
+        <td><code>melodic_auth</code></td>
+        <td>Name of the authentication cookie set in the browser</td>
+    </tr>
+    <tr>
+        <td><code>auth.cookieLifetime</code></td>
+        <td>int</td>
+        <td><code>3600</code></td>
+        <td>Cookie time-to-live in seconds</td>
+    </tr>
+</table>
+
+<h3>Authentication &mdash; Login Page Styling</h3>
+
+<p>These keys control the appearance of the built-in login page rendered by the framework. All are optional.</p>
+
+<table>
+    <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    <tr>
+        <td><code>auth.loginPage.title</code></td>
+        <td>string</td>
+        <td><code>Sign In</code></td>
+        <td>Page heading shown on the login form</td>
+    </tr>
+    <tr>
+        <td><code>auth.loginPage.primaryColor</code></td>
+        <td>string</td>
+        <td><code>#4a90d9</code></td>
+        <td>Primary button and accent color (CSS color value)</td>
+    </tr>
+    <tr>
+        <td><code>auth.loginPage.primaryHoverColor</code></td>
+        <td>string</td>
+        <td><code>#357abd</code></td>
+        <td>Button hover color</td>
+    </tr>
+    <tr>
+        <td><code>auth.loginPage.backgroundColor</code></td>
+        <td>string</td>
+        <td><code>#f5f5f5</code></td>
+        <td>Page background color</td>
+    </tr>
+    <tr>
+        <td><code>auth.loginPage.cardBackground</code></td>
+        <td>string</td>
+        <td><code>#ffffff</code></td>
+        <td>Login card/panel background color</td>
+    </tr>
+    <tr>
+        <td><code>auth.loginPage.textColor</code></td>
+        <td>string</td>
+        <td><code>#333333</code></td>
+        <td>Primary text color on the login page</td>
+    </tr>
+    <tr>
+        <td><code>auth.loginPage.subtextColor</code></td>
+        <td>string</td>
+        <td><code>#555555</code></td>
+        <td>Secondary/subtext color</td>
+    </tr>
+    <tr>
+        <td><code>auth.loginPage.logoUrl</code></td>
+        <td>string|null</td>
+        <td><code>null</code></td>
+        <td>URL to a logo image displayed above the login form</td>
+    </tr>
+    <tr>
+        <td><code>auth.loginPage.logoAlt</code></td>
+        <td>string|null</td>
+        <td><code>null</code></td>
+        <td>Alt text for the logo image</td>
+    </tr>
+    <tr>
+        <td><code>auth.loginPage.faviconUrl</code></td>
+        <td>string|null</td>
+        <td><code>null</code></td>
+        <td>URL to a custom favicon for the login page</td>
+    </tr>
+    <tr>
+        <td><code>auth.loginPage.customCss</code></td>
+        <td>string|null</td>
+        <td><code>null</code></td>
+        <td>Raw CSS string injected into the login page for additional styling</td>
+    </tr>
+</table>
+
+<h3>Authentication &mdash; Local JWT Signing</h3>
+
+<p>When using OAuth2 or local authentication providers, the framework issues its own JWT tokens signed with these settings.</p>
+
+<table>
+    <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    <tr>
+        <td><code>auth.local.signingKey</code></td>
+        <td>string</td>
+        <td>&mdash;</td>
+        <td>Secret key used to sign and verify JWT tokens. Must be a strong, random value in production.</td>
+    </tr>
+    <tr>
+        <td><code>auth.local.issuer</code></td>
+        <td>string</td>
+        <td><code>melodic-app</code></td>
+        <td>Value of the <code>iss</code> claim in generated tokens</td>
+    </tr>
+    <tr>
+        <td><code>auth.local.audience</code></td>
+        <td>string</td>
+        <td><code>melodic-app</code></td>
+        <td>Value of the <code>aud</code> claim in generated tokens</td>
+    </tr>
+    <tr>
+        <td><code>auth.local.tokenLifetime</code></td>
+        <td>int</td>
+        <td><code>3600</code></td>
+        <td>Token time-to-live in seconds</td>
+    </tr>
+    <tr>
+        <td><code>auth.local.algorithm</code></td>
+        <td>string</td>
+        <td><code>HS256</code></td>
+        <td>JWT signing algorithm (e.g., <code>HS256</code>, <code>HS384</code>, <code>HS512</code>)</td>
+    </tr>
+</table>
+
+<div class="callout callout-warning">
+    <p><strong>Important:</strong> Never commit your production <code>signingKey</code> to version control. Use environment variables or a secrets manager, and inject the value at deploy time.</p>
+</div>
+
+<h3>Authentication &mdash; Providers</h3>
+
+<p>Each entry under <code>auth.providers</code> defines an external (or local) authentication provider. The key is the provider name (e.g., <code>google</code>, <code>github</code>, <code>local</code>), and the value is an object with the following properties:</p>
+
+<table>
+    <tr><th>Key</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    <tr>
+        <td><code>type</code></td>
+        <td>string</td>
+        <td>yes</td>
+        <td>Provider type: <code>oidc</code>, <code>oauth2</code>, or <code>local</code></td>
+    </tr>
+    <tr>
+        <td><code>label</code></td>
+        <td>string</td>
+        <td>no</td>
+        <td>Human-readable button label (e.g., <code>Sign in with Google</code>)</td>
+    </tr>
+    <tr>
+        <td><code>discoveryUrl</code></td>
+        <td>string</td>
+        <td>OIDC only</td>
+        <td>OpenID Connect discovery endpoint URL</td>
+    </tr>
+    <tr>
+        <td><code>authorizeUrl</code></td>
+        <td>string</td>
+        <td>OAuth2 only</td>
+        <td>Authorization endpoint URL</td>
+    </tr>
+    <tr>
+        <td><code>tokenUrl</code></td>
+        <td>string</td>
+        <td>OAuth2 only</td>
+        <td>Token exchange endpoint URL</td>
+    </tr>
+    <tr>
+        <td><code>userInfoUrl</code></td>
+        <td>string</td>
+        <td>OAuth2 only</td>
+        <td>User info endpoint URL for fetching profile data</td>
+    </tr>
+    <tr>
+        <td><code>clientId</code></td>
+        <td>string</td>
+        <td>yes</td>
+        <td>OAuth client ID issued by the provider</td>
+    </tr>
+    <tr>
+        <td><code>clientSecret</code></td>
+        <td>string</td>
+        <td>yes</td>
+        <td>OAuth client secret</td>
+    </tr>
+    <tr>
+        <td><code>redirectUri</code></td>
+        <td>string</td>
+        <td>yes</td>
+        <td>Full callback URL registered with the provider (e.g., <code>http://localhost:8080/auth/callback/google</code>)</td>
+    </tr>
+    <tr>
+        <td><code>audience</code></td>
+        <td>string</td>
+        <td>no</td>
+        <td>Audience parameter sent with the authorization request (some providers require this)</td>
+    </tr>
+    <tr>
+        <td><code>scopes</code></td>
+        <td>string</td>
+        <td>no</td>
+        <td>Space-separated list of OAuth scopes (e.g., <code>openid profile email</code>)</td>
+    </tr>
+    <tr>
+        <td><code>claimMap</code></td>
+        <td>object</td>
+        <td>no</td>
+        <td>Maps provider-specific claim names to Melodic's standard claims. Used with OAuth2 providers to normalize user info responses.</td>
+    </tr>
+</table>
+
+<div class="callout callout-tip">
+    <p><strong>Tip:</strong> For OIDC providers (like Google or Microsoft Entra), you only need <code>discoveryUrl</code>, <code>clientId</code>, <code>clientSecret</code>, <code>redirectUri</code>, and <code>scopes</code>. The framework fetches the authorize, token, and userinfo URLs automatically from the discovery document.</p>
+</div>
+
+<h3>CORS</h3>
+
+<table>
+    <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    <tr>
+        <td><code>cors.allowedOrigins</code></td>
+        <td>array</td>
+        <td><code>["*"]</code></td>
+        <td>List of allowed origins. Use <code>["*"]</code> to allow all, or specify exact origins.</td>
+    </tr>
+    <tr>
+        <td><code>cors.allowedMethods</code></td>
+        <td>array</td>
+        <td><code>["GET", "POST", "PUT", "DELETE", "OPTIONS"]</code></td>
+        <td>HTTP methods allowed in CORS preflight responses</td>
+    </tr>
+    <tr>
+        <td><code>cors.allowedHeaders</code></td>
+        <td>array</td>
+        <td><code>["Content-Type", "Authorization"]</code></td>
+        <td>Request headers the client is allowed to send</td>
+    </tr>
+    <tr>
+        <td><code>cors.maxAge</code></td>
+        <td>int</td>
+        <td><code>3600</code></td>
+        <td>How long (in seconds) the browser can cache a preflight response</td>
+    </tr>
+</table>
+
+<h3>Logging</h3>
+
+<table>
+    <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    <tr>
+        <td><code>logging.path</code></td>
+        <td>string|null</td>
+        <td><code>null</code></td>
+        <td>Directory for log files. Defaults to <code>{basePath}/logs</code> when not specified.</td>
+    </tr>
+    <tr>
+        <td><code>logging.level</code></td>
+        <td>string</td>
+        <td><code>debug</code></td>
+        <td>Minimum log level: <code>emergency</code>, <code>alert</code>, <code>critical</code>, <code>error</code>, <code>warning</code>, <code>notice</code>, <code>info</code>, <code>debug</code></td>
+    </tr>
+</table>
+
+<h2>Complete Example Config</h2>
+
+<p>Here is a full <code>config/config.json</code> showing every framework-recognized key:</p>
+
+<pre><code>{
+    "app": {
+        "name": "My Melodic App",
+        "debug": true
+    },
+    "database": {
+        "dsn": "mysql:host=127.0.0.1;dbname=myapp;charset=utf8mb4",
+        "username": "app_user",
+        "password": "secret"
+    },
+    "auth": {
+        "api": {
+            "enabled": true
+        },
+        "web": {
+            "enabled": true
+        },
+        "loginPath": "/auth/login",
+        "callbackPath": "/auth/callback",
+        "postLoginRedirect": "/dashboard",
+        "cookieName": "melodic_auth",
+        "cookieLifetime": 7200,
+        "loginPage": {
+            "title": "Welcome Back",
+            "primaryColor": "#6c63ff",
+            "primaryHoverColor": "#5a52e0",
+            "backgroundColor": "#0f1117",
+            "cardBackground": "#1c2030",
+            "textColor": "#e4e4e7",
+            "subtextColor": "#8b8b9e",
+            "logoUrl": "/images/logo.svg",
+            "logoAlt": "My App",
+            "faviconUrl": "/favicon.ico",
+            "customCss": ".login-card { box-shadow: 0 4px 24px rgba(0,0,0,0.3); }"
+        },
+        "local": {
+            "signingKey": "your-256-bit-secret-key-here",
+            "issuer": "my-app",
+            "audience": "my-app",
+            "tokenLifetime": 3600,
+            "algorithm": "HS256"
+        },
+        "providers": {
+            "google": {
+                "type": "oidc",
+                "label": "Sign in with Google",
+                "discoveryUrl": "https://accounts.google.com/.well-known/openid-configuration",
+                "clientId": "your-google-client-id",
+                "clientSecret": "your-google-client-secret",
+                "redirectUri": "https://myapp.com/auth/callback/google",
+                "scopes": "openid profile email"
+            },
+            "github": {
+                "type": "oauth2",
+                "label": "Sign in with GitHub",
+                "authorizeUrl": "https://github.com/login/oauth/authorize",
+                "tokenUrl": "https://github.com/login/oauth/access_token",
+                "userInfoUrl": "https://api.github.com/user",
+                "clientId": "your-github-client-id",
+                "clientSecret": "your-github-client-secret",
+                "redirectUri": "https://myapp.com/auth/callback/github",
+                "scopes": "read:user user:email",
+                "claimMap": {
+                    "sub": "id",
+                    "name": "name",
+                    "email": "email",
+                    "picture": "avatar_url"
+                }
+            }
+        }
+    },
+    "cors": {
+        "allowedOrigins": ["https://myapp.com", "http://localhost:3000"],
+        "allowedMethods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allowedHeaders": ["Content-Type", "Authorization"],
+        "maxAge": 3600
+    },
+    "logging": {
+        "path": "/var/log/my-app",
+        "level": "info"
+    }
+}</code></pre>
+
+<h2>Environment-Specific Configuration</h2>
+
+<p>Melodic does not enforce a specific strategy for managing environments, but the <code>loadConfig()</code> method supports multiple calls with deep merging, which gives you a clean pattern for layered configuration.</p>
+
+<h3>Strategy: Base + Override Files</h3>
+
+<p>Create a base config with shared settings and a per-environment override:</p>
+
+<pre><code>config/
+&boxv;&boxh;&boxh; config.json              &larr; Shared defaults
+&boxv;&boxh;&boxh; config.development.json  &larr; Dev overrides
+&boxur;&boxh;&boxh; config.production.json   &larr; Production overrides</code></pre>
+
+<p>Then load both in your bootstrap, with the override file second:</p>
+
+<pre><code>$env = getenv('APP_ENV') ?: 'development';
+
+$app-&gt;loadConfig('config/config.json');
+$app-&gt;loadConfig("config/config.{$env}.json");</code></pre>
+
+<p>The second file only needs to contain the keys that differ. Everything else is inherited from the base config.</p>
+
+<h3>Strategy: Environment Variables</h3>
+
+<p>For sensitive values like database credentials and signing keys, use environment variables and set them in config after loading the file:</p>
+
+<pre><code>$app-&gt;loadConfig('config/config.json');
+
+// Override sensitive values from environment
+$config = $app-&gt;config();
+$config-&gt;set('database.dsn', getenv('DB_DSN') ?: $config-&gt;get('database.dsn'));
+$config-&gt;set('database.username', getenv('DB_USER') ?: $config-&gt;get('database.username'));
+$config-&gt;set('database.password', getenv('DB_PASS') ?: $config-&gt;get('database.password'));
+$config-&gt;set('auth.local.signingKey', getenv('JWT_SECRET') ?: $config-&gt;get('auth.local.signingKey'));</code></pre>
+
+<div class="callout callout-warning">
+    <p><strong>Important:</strong> Never commit production secrets (database passwords, signing keys, client secrets) to version control. Use environment variables, a secrets manager, or a <code>config.production.json</code> file deployed separately from your codebase.</p>
+</div>
+
+<h3>Strategy: Programmatic Overrides</h3>
+
+<p>You can also use the <code>Configuration::set()</code> method to override any value at runtime, regardless of what the JSON file contains:</p>
+
+<pre><code>$app-&gt;loadConfig('config/config.json');
+
+$config = $app-&gt;config();
+$config-&gt;set('app.debug', false);
+$config-&gt;set('cors.allowedOrigins', ['https://production.example.com']);</code></pre>
+
+<div class="callout callout-tip">
+    <p><strong>Tip:</strong> The <code>app</code> section (e.g., <code>app.name</code>, <code>app.debug</code>) is not consumed by the framework itself &mdash; it is a convention for your own application settings. You can add any keys you like and access them with <code>$app-&gt;config('my.custom.key')</code>.</p>
+</div>

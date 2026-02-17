@@ -3,13 +3,20 @@
 	"description": "A modern PHP 8.2+ framework with CQRS, JWT authentication, and middleware pipeline",
 	"type": "library",
 	"license": "MIT",
-	"keywords": ["php", "framework", "cqrs", "jwt", "middleware", "mvc", "dependency-injection", "routing"],
+	"homepage": "https://php.melodic.dev",
+	"keywords": ["php", "framework", "cqrs", "jwt", "middleware", "mvc", "dependency-injection", "routing", "validation", "events", "cache", "session", "logging", "console"],
 	"authors": [
 		{
 			"name": "Melodic Development",
-			"email": "info@melodicdevelopment.com"
+			"email": "info@melodicdevelopment.com",
+			"homepage": "https://melodic.dev"
 		}
 	],
+	"support": {
+		"issues": "https://github.com/MelodicDevelopment/melodic-php/issues",
+		"source": "https://github.com/MelodicDevelopment/melodic-php",
+		"docs": "https://php.melodic.dev/docs"
+	},
 	"require": {
 		"php": ">=8.2",
 		"firebase/php-jwt": "^6.0"

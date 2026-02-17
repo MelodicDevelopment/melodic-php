@@ -2,5 +2,5 @@
 composer.phar
 /.claude/settings.local.json
 .DS_Store
-example/logs/
+web/php.melodic.dev/logs/
 .phpunit.cache/

@@ -6,6 +6,7 @@ namespace Melodic\Core;
 
 use Melodic\DI\Container;
 use Melodic\DI\ServiceProvider;
+use Melodic\Error\ExceptionHandler;
 use Melodic\Http\Middleware\ErrorHandlerMiddleware;
 use Melodic\Http\Middleware\MiddlewareInterface;
 use Melodic\Http\Middleware\Pipeline;
@@ -127,6 +128,11 @@ class Application
                 ? $this->container->get(LoggerInterface::class)
                 : new NullLogger();
 
+            // Register the exception handler in the container
+            $exceptionHandler = new ExceptionHandler($logger);
+            $exceptionHandler->setDebug($debug);
+            $this->container->instance(ExceptionHandler::class, $exceptionHandler);
+
             $request = $request ?? Request::capture();
 
             // Build the final handler (routing middleware)
@@ -164,15 +170,23 @@ class Application
             $response->send();
         } catch (\Throwable $e) {
             // Last-resort safety net for catastrophic failures
-            http_response_code(500);
-            header('Content-Type: text/plain; charset=UTF-8');
+            // Use ExceptionHandler if available, otherwise fall back to plain text
+            $request = $request ?? new Request();
 
-            if ($debug) {
-                echo "Fatal error: {$e->getMessage()}\n";
-                echo "In: {$e->getFile()}:{$e->getLine()}\n";
-                echo $e->getTraceAsString();
+            if (isset($exceptionHandler)) {
+                $response = $exceptionHandler->handle($e, $request);
+                $response->send();
             } else {
-                echo 'An internal server error occurred.';
+                http_response_code(500);
+                header('Content-Type: text/plain; charset=UTF-8');
+
+                if ($debug) {
+                    echo "Fatal error: {$e->getMessage()}\n";
+                    echo "In: {$e->getFile()}:{$e->getLine()}\n";
+                    echo $e->getTraceAsString();
+                } else {
+                    echo 'An internal server error occurred.';
+                }
             }
         }
     }

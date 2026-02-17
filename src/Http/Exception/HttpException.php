@@ -18,4 +18,24 @@ class HttpException extends \RuntimeException
     {
         return $this->statusCode;
     }
+
+    public static function notFound(string $message = 'Not Found'): self
+    {
+        return new self(404, $message);
+    }
+
+    public static function forbidden(string $message = 'Forbidden'): self
+    {
+        return new self(403, $message);
+    }
+
+    public static function badRequest(string $message = 'Bad Request'): self
+    {
+        return new self(400, $message);
+    }
+
+    public static function methodNotAllowed(string $message = 'Method Not Allowed'): self
+    {
+        return new self(405, $message);
+    }
 }

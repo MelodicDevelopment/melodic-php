@@ -2,11 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Melodic\Security;
+namespace Melodic\Session;
 
-use Melodic\Session\SessionInterface;
-
-class SessionManager implements SessionInterface
+class NativeSession implements SessionInterface
 {
     public function start(): void
     {
@@ -15,16 +13,17 @@ class SessionManager implements SessionInterface
         }
     }
 
+    public function get(string $key, mixed $default = null): mixed
+    {
+        $this->start();
+
+        return $_SESSION[$key] ?? $default;
+    }
+
     public function set(string $key, mixed $value): void
     {
         $this->start();
         $_SESSION[$key] = $value;
-    }
-
-    public function get(string $key, mixed $default = null): mixed
-    {
-        $this->start();
-        return $_SESSION[$key] ?? $default;
     }
 
     public function has(string $key): bool

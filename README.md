@@ -773,6 +773,16 @@ $this->viewBag->breadcrumbs = ['Home', 'Users'];
 - **No facades, no mediator** — dependencies are explicit and directly instantiated
 - **Immutable request/response** — `withAttribute()`, `withHeader()`, etc. return new instances
 
+## Architecture Decisions
+
+### Custom Request/Response vs PSR-7
+
+Melodic uses lightweight, purpose-built `Request` and `Response` classes rather than implementing PSR-7 (`psr/http-message`). Both classes follow an immutable builder pattern (`withAttribute()`, `withHeader()`, `withStatus()`, etc.) and are designed specifically for the framework's middleware pipeline.
+
+PSR-7 was not adopted because its full interface surface — `StreamInterface`, `UriInterface`, `ServerRequestInterface` with 20+ methods, and mandatory stream-wrapping of all message bodies — adds significant complexity for minimal benefit in a framework that controls the entire HTTP stack. Melodic's Request and Response expose only what the middleware pipeline, router, and controllers actually need, resulting in simpler, faster objects that are easier to understand and debug.
+
+If you need to integrate third-party PSR-7 middleware, you can write thin adapter classes that map between `Melodic\Http\Request`/`Response` and the PSR-7 interfaces.
+
 ## Dependencies
 
 | Package | Purpose |

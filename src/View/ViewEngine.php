@@ -21,6 +21,10 @@ class ViewEngine
 
     public function render(string $template, array $data = [], ?string $layout = null): string
     {
+        $this->bodyContent = '';
+        $this->sections = [];
+        $this->currentSection = null;
+
         $templatePath = $this->viewsPath . '/' . $template . '.phtml';
 
         if (!file_exists($templatePath)) {

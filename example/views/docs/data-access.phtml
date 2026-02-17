@@ -91,7 +91,7 @@ $id = $context-&gt;lastInsertId();</code></pre>
 <ul>
     <li>Uses <code>ReflectionClass::newInstanceWithoutConstructor()</code> to create the instance</li>
     <li>Maps column names to property names directly &mdash; the column name must match the property name</li>
-    <li>Works with <strong>public</strong>, <strong>protected</strong>, and <strong>private</strong> properties (uses <code>setAccessible(true)</code>)</li>
+    <li>Works with <strong>public</strong>, <strong>protected</strong>, and <strong>private</strong> properties via reflection</li>
     <li>Columns with no matching property are silently ignored</li>
 </ul>
 

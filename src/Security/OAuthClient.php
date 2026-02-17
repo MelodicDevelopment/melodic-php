@@ -8,7 +8,7 @@ class OAuthClient
 {
     public function __construct(
         private readonly OidcProvider $provider,
-        private readonly AuthConfig $config,
+        private readonly AuthProviderConfig $config,
     ) {
     }
 

@@ -12,7 +12,7 @@ class AuthLoginRenderer implements AuthLoginRendererInterface
     ) {
     }
 
-    public function render(?string $error = null): string
+    public function render(?string $error = null, ?string $csrfToken = null): string
     {
         $providers = $this->registry->all();
         $loginPath = $this->config->loginPath;
@@ -111,8 +111,12 @@ HTML;
         if ($localProvider !== null) {
             $formAction = htmlspecialchars(rtrim($callbackPath, '/') . '/' . $localProvider->getName(), ENT_QUOTES, 'UTF-8');
             $label = htmlspecialchars($localProvider->getLabel() ?: 'Sign in with Email', ENT_QUOTES, 'UTF-8');
+            $csrfField = $csrfToken !== null
+                ? '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') . '">'
+                : '';
             $html .= <<<HTML
     <form method="POST" action="{$formAction}">
+        {$csrfField}
         <div class="form-group">
             <label for="username">Email or Username</label>
             <input type="text" id="username" name="username" required autocomplete="username">

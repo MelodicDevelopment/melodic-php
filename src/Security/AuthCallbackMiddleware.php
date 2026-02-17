@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Melodic\Security;
 
+use Melodic\Http\HttpMethod;
 use Melodic\Http\Middleware\MiddlewareInterface;
 use Melodic\Http\Middleware\RequestHandlerInterface;
 use Melodic\Http\RedirectResponse;
@@ -12,12 +13,15 @@ use Melodic\Http\Response;
 
 class AuthCallbackMiddleware implements MiddlewareInterface
 {
+    private readonly CsrfToken $csrf;
+
     public function __construct(
         private readonly AuthConfig $config,
         private readonly AuthProviderRegistry $registry,
         private readonly SessionManager $session,
         private readonly AuthLoginRendererInterface $loginRenderer,
     ) {
+        $this->csrf = new CsrfToken($this->session);
     }
 
     public function process(Request $request, RequestHandlerInterface $handler): Response
@@ -54,7 +58,8 @@ class AuthCallbackMiddleware implements MiddlewareInterface
     private function handleLoginPage(Request $request): Response
     {
         $error = $request->query('error');
-        $html = $this->loginRenderer->render($error);
+        $csrfToken = $this->csrf->generate();
+        $html = $this->loginRenderer->render($error, $csrfToken);
 
         return new Response(
             statusCode: 200,
@@ -82,11 +87,26 @@ class AuthCallbackMiddleware implements MiddlewareInterface
 
         $provider = $this->registry->get($providerName);
 
+        // Validate CSRF token on POST requests to local auth providers
+        if ($request->method() === HttpMethod::POST && $provider->getType() === AuthProviderType::Local) {
+            $submittedToken = (string) $request->body('csrf_token', '');
+
+            if ($submittedToken === '' || !$this->csrf->validate($submittedToken)) {
+                $errorMessage = urlencode('Invalid or expired form submission. Please try again.');
+                return new RedirectResponse("{$this->config->loginPath}?error={$errorMessage}");
+            }
+        }
+
         try {
             $result = $provider->handleCallback($request, $this->session);
         } catch (SecurityException $e) {
             $errorMessage = urlencode($e->getMessage());
             return new RedirectResponse("{$this->config->loginPath}?error={$errorMessage}");
+        }
+
+        // Regenerate session ID after successful authentication to prevent session fixation
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
         }
 
         $redirectTo = $this->session->get('melodic_redirect_after_login', $this->config->postLoginRedirect);

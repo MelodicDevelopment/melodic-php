@@ -3,9 +3,19 @@
 	"description": "A modern PHP 8.2+ framework with CQRS, JWT authentication, and middleware pipeline",
 	"type": "library",
 	"license": "MIT",
+	"keywords": ["php", "framework", "cqrs", "jwt", "middleware", "mvc", "dependency-injection", "routing"],
+	"authors": [
+		{
+			"name": "Melodic Development",
+			"email": "info@melodicdevelopment.com"
+		}
+	],
 	"require": {
 		"php": ">=8.2",
 		"firebase/php-jwt": "^6.0"
+	},
+	"require-dev": {
+		"phpunit/phpunit": "^11.0"
 	},
 	"autoload": {
 		"psr-4": {
@@ -14,8 +24,12 @@
 	},
 	"autoload-dev": {
 		"psr-4": {
-			"Example\\": "example/src/"
+			"Example\\": "example/src/",
+			"Tests\\": "tests/"
 		}
+	},
+	"scripts": {
+		"test": "phpunit"
 	},
 	"config": {
 		"sort-packages": true

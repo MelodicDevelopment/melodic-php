@@ -34,8 +34,10 @@ class DbContext implements DbContextInterface
         $statement = $this->prepareAndExecute($sql, $params);
         $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
 
+        $reflector = new ReflectionClass($class);
+
         return array_map(
-            fn(array $row) => $this->hydrate($class, $row),
+            fn(array $row) => $this->hydrate($reflector, $row),
             $rows
         );
     }
@@ -49,7 +51,7 @@ class DbContext implements DbContextInterface
             return null;
         }
 
-        return $this->hydrate($class, $row);
+        return $this->hydrate(new ReflectionClass($class), $row);
     }
 
     public function command(string $sql, array $params = []): int
@@ -94,19 +96,38 @@ class DbContext implements DbContextInterface
         return $statement;
     }
 
-    private function hydrate(string $class, array $row): object
+    private function hydrate(ReflectionClass $reflector, array $row): object
     {
-        $reflector = new ReflectionClass($class);
         $instance = $reflector->newInstanceWithoutConstructor();
 
         foreach ($row as $column => $value) {
             if ($reflector->hasProperty($column)) {
                 $property = $reflector->getProperty($column);
-                $property->setAccessible(true);
-                $property->setValue($instance, $value);
+                $property->setValue($instance, $this->castValue($property, $value));
             }
         }
 
         return $instance;
+    }
+
+    private function castValue(ReflectionProperty $property, mixed $value): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $type = $property->getType();
+
+        if (!$type instanceof \ReflectionNamedType) {
+            return $value;
+        }
+
+        return match ($type->getName()) {
+            'int' => (int) $value,
+            'float' => (float) $value,
+            'bool' => (bool) $value,
+            'string' => (string) $value,
+            default => $value,
+        };
     }
 }

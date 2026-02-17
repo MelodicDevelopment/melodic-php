@@ -17,7 +17,7 @@ class ExampleLoginRenderer implements AuthLoginRendererInterface
 	) {
 	}
 
-	public function render(?string $error = null): string
+	public function render(?string $error = null, ?string $csrfToken = null): string
 	{
 		$providers = $this->registry->all();
 		$loginPath = $this->config->loginPath;
@@ -68,8 +68,12 @@ HTML;
 		if ($localProvider !== null) {
 			$formAction = htmlspecialchars(rtrim($callbackPath, '/') . '/' . $localProvider->getName(), ENT_QUOTES, 'UTF-8');
 			$btnLabel = htmlspecialchars($localProvider->getLabel() ?: 'Sign In', ENT_QUOTES, 'UTF-8');
+			$csrfField = $csrfToken !== null
+				? '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') . '">'
+				: '';
 			$localFormHtml = <<<HTML
 			<form method="POST" action="{$formAction}" class="login-form">
+				{$csrfField}
 				<div class="field">
 					<label for="username">Email or Username</label>
 					<input type="text" id="username" name="username" placeholder="you@example.com" required autocomplete="username">

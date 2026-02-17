@@ -17,7 +17,6 @@ class Model
         foreach ($data as $key => $value) {
             if ($reflector->hasProperty($key)) {
                 $property = $reflector->getProperty($key);
-                $property->setAccessible(true);
                 $property->setValue($instance, $value);
             }
         }

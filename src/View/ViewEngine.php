@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Melodic\View;
 
+use Melodic\Cache\CacheInterface;
 use RuntimeException;
 
 class ViewEngine
@@ -17,6 +18,7 @@ class ViewEngine
 
     public function __construct(
         private readonly string $viewsPath,
+        private readonly ?CacheInterface $cache = null,
     ) {}
 
     public function render(string $template, array $data = [], ?string $layout = null): string
@@ -44,6 +46,26 @@ class ViewEngine
             $content = $this->renderTemplate($layoutPath, $data);
             $this->bodyContent = '';
         }
+
+        return $content;
+    }
+
+    public function renderCached(string $template, array $data = [], ?string $layout = null, int $ttl = 3600): string
+    {
+        if ($this->cache === null) {
+            return $this->render($template, $data, $layout);
+        }
+
+        $cacheKey = 'view:' . $template . ':' . ($layout ?? '') . ':' . md5(serialize($data));
+
+        $cached = $this->cache->get($cacheKey);
+
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $content = $this->render($template, $data, $layout);
+        $this->cache->set($cacheKey, $content, $ttl);
 
         return $content;
     }

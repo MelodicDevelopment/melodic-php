@@ -61,6 +61,11 @@ melodic-php/
 │   │   ├── Request.php                      # Wraps superglobals, immutable attributes
 │   │   ├── Response.php                     # Status code, headers, body, send()
 │   │   ├── JsonResponse.php                 # JSON-encoded response
+│   │   ├── Exception/
+│   │   │   ├── HttpException.php            # Base HTTP exception with status code
+│   │   │   ├── BadRequestException.php      # 400
+│   │   │   ├── NotFoundException.php        # 404
+│   │   │   └── MethodNotAllowedException.php # 405
 │   │   └── Middleware/
 │   │       ├── MiddlewareInterface.php       # process(Request, RequestHandler): Response
 │   │       ├── RequestHandlerInterface.php
@@ -93,10 +98,50 @@ melodic-php/
 │   │   ├── AuthenticationMiddleware.php     # Bearer token extraction and validation
 │   │   ├── AuthorizationMiddleware.php      # Entitlement-based access control
 │   │   └── SecurityException.php
+│   ├── Validation/
+│   │   ├── Validator.php                    # Validates objects and arrays against attribute rules
+│   │   ├── ValidationResult.php             # Structured result with isValid and errors
+│   │   ├── ValidationException.php          # Throwable validation failure (maps to 422)
+│   │   └── Rules/                           # Attribute rules
+│   │       ├── Required.php
+│   │       ├── Email.php
+│   │       ├── MinLength.php, MaxLength.php
+│   │       ├── Min.php, Max.php
+│   │       ├── Pattern.php
+│   │       └── In.php
+│   ├── Error/
+│   │   └── ExceptionHandler.php             # JSON/HTML error responses, debug mode, logging
+│   ├── Event/
+│   │   ├── EventDispatcherInterface.php     # listen() and dispatch()
+│   │   ├── EventDispatcher.php              # Priority-based listener execution
+│   │   ├── Event.php                        # Base event with stopPropagation()
+│   │   └── EventServiceProvider.php
+│   ├── Cache/
+│   │   ├── CacheInterface.php               # PSR-16-style get/set/delete/has/clear
+│   │   ├── FileCache.php                    # File-based with TTL expiration
+│   │   ├── ArrayCache.php                   # In-memory for testing
+│   │   └── CacheServiceProvider.php
+│   ├── Session/
+│   │   ├── SessionInterface.php             # start, get, set, has, remove, destroy, regenerate
+│   │   ├── NativeSession.php                # Wraps PHP session functions
+│   │   ├── ArraySession.php                 # In-memory for testing
+│   │   └── SessionServiceProvider.php
+│   ├── Log/
+│   │   ├── LoggerInterface.php              # Standard log level methods
+│   │   ├── LogLevel.php                     # Enum: emergency through debug
+│   │   ├── FileLogger.php                   # Daily rotating log files with interpolation
+│   │   ├── NullLogger.php                   # No-op for testing
+│   │   └── LoggingServiceProvider.php
+│   ├── Console/
+│   │   ├── CommandInterface.php             # getName(), getDescription(), execute()
+│   │   ├── Command.php                      # Base class with output helpers
+│   │   ├── Console.php                      # Command runner with help output
+│   │   ├── RouteListCommand.php             # Lists registered routes
+│   │   └── CacheClearCommand.php            # Clears application cache
 │   ├── Service/
 │   │   └── Service.php                      # Base service holding DbContext references
 │   └── View/
-│       ├── ViewEngine.php                   # Renders .phtml templates with layouts/sections
+│       ├── ViewEngine.php                   # Renders .phtml templates with layouts/sections/caching
 │       └── ViewBag.php                      # Dynamic key-value store for view data
 └── example/                                 # Working demo application
     ├── config/config.json
@@ -764,6 +809,152 @@ $this->viewBag->breadcrumbs = ['Home', 'Users'];
 <title><?= htmlspecialchars($viewBag->title) ?></title>
 ```
 
+## Validation
+
+Attribute-based validation using PHP 8.2+ attributes on DTO properties:
+
+```php
+use Melodic\Validation\Rules\{Required, Email, MinLength, Max, In};
+
+class CreateUserDto
+{
+    #[Required]
+    #[MinLength(3)]
+    public string $username;
+
+    #[Required]
+    #[Email]
+    public string $email;
+
+    #[Required]
+    #[In(['admin', 'editor', 'viewer'])]
+    public string $role;
+}
+```
+
+Validate objects or raw arrays:
+
+```php
+$validator = new Validator();
+
+// Validate an object
+$result = $validator->validate($dto);
+
+// Validate raw input against a DTO class
+$result = $validator->validateArray($request->body(), CreateUserDto::class);
+
+if (!$result->isValid) {
+    return $this->json(['errors' => $result->errors], 422);
+}
+```
+
+Available rules: `#[Required]`, `#[Email]`, `#[MinLength]`, `#[MaxLength]`, `#[Min]`, `#[Max]`, `#[Pattern]`, `#[In]`. All accept a custom `message` parameter.
+
+See [docs/validation.md](docs/validation.md) for full details.
+
+## Error Handling
+
+The `ExceptionHandler` catches exceptions and returns structured JSON or HTML responses based on the client's `Accept` header:
+
+```php
+// Throw typed exceptions from controllers or middleware
+throw new NotFoundException('User not found');           // 404
+throw new BadRequestException('Missing required field'); // 400
+throw new HttpException(409, 'Resource conflict');       // any status code
+```
+
+Exception-to-status-code mapping: `HttpException` uses its status code, `SecurityException` maps to 401, `JsonException` to 400, everything else to 500. In debug mode, responses include stack traces; in production, 5xx errors return a generic message.
+
+See [docs/error-handling.md](docs/error-handling.md) for full details.
+
+## Events
+
+Priority-based event dispatcher for decoupling components:
+
+```php
+use Melodic\Event\EventDispatcher;
+
+$dispatcher = new EventDispatcher();
+
+$dispatcher->listen(UserRegistered::class, function (UserRegistered $event) {
+    sendWelcomeEmail($event->email);
+}, priority: 10);
+
+$dispatcher->dispatch(new UserRegistered(userId: 42, email: 'alice@example.com'));
+```
+
+Register via `EventServiceProvider` for DI container integration. Events extending the `Event` base class support `stopPropagation()`.
+
+See [docs/events.md](docs/events.md) for full details.
+
+## Cache
+
+PSR-16-style caching with `FileCache` and `ArrayCache` drivers:
+
+```php
+use Melodic\Cache\FileCache;
+
+$cache = new FileCache('/path/to/cache');
+$cache->set('user:42', $userData, ttl: 3600);
+$cache->get('user:42');
+```
+
+Register via `CacheServiceProvider`. The `ViewEngine` also supports cached rendering via `renderCached()`.
+
+See [docs/cache.md](docs/cache.md) for full details.
+
+## Session
+
+Session abstraction with `NativeSession` (wraps PHP sessions) and `ArraySession` (for testing):
+
+```php
+$session->set('user_id', 42);
+$session->get('user_id');       // 42
+$session->regenerate();         // new session ID
+$session->destroy();            // clear everything
+```
+
+Register via `SessionServiceProvider`. Session IDs are automatically regenerated after authentication.
+
+See [docs/session.md](docs/session.md) for full details.
+
+## Logging
+
+Daily rotating file logger with level filtering and message interpolation:
+
+```php
+use Melodic\Log\FileLogger;
+use Melodic\Log\LogLevel;
+
+$logger = new FileLogger('/path/to/logs', LogLevel::WARNING);
+$logger->info('User {username} logged in', ['username' => 'alice']);
+$logger->error('Failed', ['exception' => $e]); // includes stack trace
+```
+
+Register via `LoggingServiceProvider` with config-driven path and level. `NullLogger` available for testing.
+
+See [docs/logging.md](docs/logging.md) for full details.
+
+## Console
+
+CLI command runner for terminal tasks:
+
+```php
+$console = new Console();
+$console->register(new RouteListCommand($router));
+$console->register(new CacheClearCommand($cache));
+exit($console->run($argv));
+```
+
+```bash
+php bin/console route:list    # list all registered routes
+php bin/console cache:clear   # clear the application cache
+```
+
+Extend `Command` to write custom commands with `writeln()`, `error()`, and `table()` output helpers.
+
+See [docs/console.md](docs/console.md) for full details.
+
 ## Conventions
 
 - **PHP 8.2+** features throughout: enums, readonly properties, constructor promotion, match expressions, named arguments
@@ -772,6 +963,16 @@ $this->viewBag->breadcrumbs = ['Home', 'Users'];
 - **CQRS data access** — Query/Command objects executed via DbContext
 - **No facades, no mediator** — dependencies are explicit and directly instantiated
 - **Immutable request/response** — `withAttribute()`, `withHeader()`, etc. return new instances
+
+## Architecture Decisions
+
+### Custom Request/Response vs PSR-7
+
+Melodic uses lightweight, purpose-built `Request` and `Response` classes rather than implementing PSR-7 (`psr/http-message`). Both classes follow an immutable builder pattern (`withAttribute()`, `withHeader()`, `withStatus()`, etc.) and are designed specifically for the framework's middleware pipeline.
+
+PSR-7 was not adopted because its full interface surface — `StreamInterface`, `UriInterface`, `ServerRequestInterface` with 20+ methods, and mandatory stream-wrapping of all message bodies — adds significant complexity for minimal benefit in a framework that controls the entire HTTP stack. Melodic's Request and Response expose only what the middleware pipeline, router, and controllers actually need, resulting in simpler, faster objects that are easier to understand and debug.
+
+If you need to integrate third-party PSR-7 middleware, you can write thin adapter classes that map between `Melodic\Http\Request`/`Response` and the PSR-7 interfaces.
 
 ## Dependencies
 

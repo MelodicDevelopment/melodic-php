@@ -143,7 +143,7 @@ All high-priority features have been implemented:
 ### ~~Medium Priority~~ — MOSTLY COMPLETE
 
 - **Database migrations** — No schema management tool. Not strictly required for a micro-framework, but expected if you're providing a DbContext.
-- **CLI / Console component** — No artisan-style command runner. Even a basic one for migrations, cache clearing, and route listing adds value.
+- ~~**CLI / Console component**~~ — `Console` runner with `Command` base class, `RouteListCommand`, and `CacheClearCommand`
 - ~~**Caching abstraction**~~ — `CacheInterface` with `FileCache` and `ArrayCache` drivers, `CacheServiceProvider`
 - ~~**Session abstraction**~~ — `SessionInterface` with `NativeSession` and `ArraySession` drivers, backward-compatible `SessionManager`
 - **Testing utilities** — No test helpers, mock request builders, or integration test base class.
@@ -164,11 +164,11 @@ All high-priority features have been implemented:
 |-------------|--------|
 | `composer.json` with proper metadata | **Done** — includes `keywords`, `authors`, `require-dev` |
 | `LICENSE` file | **Done** — MIT license |
-| Unit tests (`tests/`) | **Done** — 295 tests, 533 assertions |
+| Unit tests (`tests/`) | **Done** — 310 tests, 566 assertions |
 | `phpunit.xml` | **Done** |
 | CI/CD (`.github/workflows/`) | **Done** — PHP 8.2, 8.3, 8.4 matrix |
-| Static analysis (`phpstan.neon`) | **Missing** |
-| `CHANGELOG.md` | **Missing** |
+| Static analysis (`phpstan.neon`) | **Done** — level 6, `composer analyse` script |
+| `CHANGELOG.md` | **Done** — full 1.0.0 changelog |
 | `CONTRIBUTING.md` | **Missing** |
 | Git tags / semantic versioning | **Not tagged** |
 | README.md | Present and comprehensive |
@@ -191,6 +191,8 @@ All high-priority features have been implemented:
 | `tests/Cache/ArrayCacheTest.php` | In-memory cache get/set/TTL/delete/clear |
 | `tests/Cache/FileCacheTest.php` | File-based cache get/set/TTL/delete/clear |
 | `tests/Session/ArraySessionTest.php` | Session get/set/has/remove/destroy |
+| `tests/Console/ConsoleTest.php` | Command registration, execution, arguments, help output, table formatting |
+| `tests/View/ViewEngineTest.php` | Template rendering, layouts, cached rendering, cache fallback |
 
 ---
 
@@ -220,13 +222,13 @@ All Phase 2 items have been addressed:
 4. ~~Cache abstraction (PSR-16 SimpleCache interface)~~ — `CacheInterface`, `FileCache`, `ArrayCache`, `CacheServiceProvider`
 5. ~~Session abstraction with pluggable drivers~~ — `SessionInterface`, `NativeSession`, `ArraySession`, backward-compatible `SessionManager`
 
-### Phase 3 — Polish
+### ~~Phase 3 — Polish~~ — MOSTLY COMPLETE
 
 1. ~~PSR-7 compatibility (or at least document why you chose not to)~~ — Documented in README.md under "Architecture Decisions"
-2. Add phpstan at level 6+ and fix all issues
-3. Template caching in ViewEngine
-4. CLI component for common tasks
-5. CHANGELOG.md and semantic version tagging
+2. ~~Add phpstan at level 6+ and fix all issues~~ — `phpstan.neon` at level 6, `composer analyse` script
+3. ~~Template caching in ViewEngine~~ — `renderCached()` with `CacheInterface` integration and TTL support
+4. ~~CLI component for common tasks~~ — `Console` runner, `Command` base class, `RouteListCommand`, `CacheClearCommand`
+5. ~~CHANGELOG.md~~ — Full 1.0.0 changelog added. Semantic version tagging not yet done.
 
 ---
 
@@ -234,6 +236,6 @@ All Phase 2 items have been addressed:
 
 The architecture and code quality are genuinely strong — this isn't a toy framework. The layering is clean, the CQRS approach is pragmatic, the auth system is comprehensive, and the PHP 8.2+ usage is exemplary. The codebase is consistent and readable.
 
-With Phases 1 and 2 complete, the framework has a solid foundation for publishing: bugs fixed, security hardened, 295 passing tests across 14 test files, CI pipeline in place, proper licensing, and a full feature set including validation, events, caching, session management, and structured error handling. The remaining Phase 3 items are polish and tooling that would elevate it from a solid framework to a fully competitive, production-grade package.
+With all three phases largely complete, the framework is ready for publishing: bugs fixed, security hardened, 310 passing tests across 16 test files, CI pipeline in place, PHPStan at level 6, proper licensing, CHANGELOG, and a full feature set including validation, events, caching, session management, structured error handling, view caching, and a CLI console. The remaining items — database migrations, testing utilities, semantic version tagging, and the lower-priority features — are enhancements for future releases.
 
 This is a credible, lightweight alternative to the larger frameworks — positioned somewhere between Slim and Laravel, with better CQRS support than either.

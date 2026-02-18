@@ -16,7 +16,7 @@
     <div class="hero-actions">
         <a href="/docs/getting-started" class="btn btn-primary btn-lg">Get Started</a>
         <a href="/docs" class="btn btn-outline btn-lg">Read the Docs</a>
-        <a href="https://github.com/melodic-dev/melodic-php" class="btn btn-outline btn-lg" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/MelodicDevelopment/melodic-php" class="btn btn-outline btn-lg" target="_blank" rel="noopener">GitHub</a>
     </div>
     <div class="hero-version">
         <span class="badge badge-accent">PHP 8.2+</span>
@@ -62,7 +62,7 @@
         </div>
         <div class="feature-card">
             <h3>Console Tools</h3>
-            <p>CLI commands for common tasks: route:list, cache:clear, view:clear, and custom commands. Build task runners and maintenance scripts with structured output.</p>
+            <p>CLI commands for common tasks: route:list, cache:clear, and custom commands. Build task runners and maintenance scripts with structured output.</p>
         </div>
     </div>
 </section>
@@ -82,24 +82,26 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 use Melodic\Core\Application;
 use Melodic\Http\Middleware\CorsMiddleware;
-use Melodic\Security\AuthenticationMiddleware;
+use Melodic\Http\Middleware\JsonBodyParserMiddleware;
+use Melodic\Security\SecurityServiceProvider;
+use Melodic\Security\ApiAuthenticationMiddleware;
 
 $app = new Application(dirname(__DIR__));
 $app-&gt;loadConfig('config/config.json');
 
 // Register service providers
-$app-&gt;services(function ($container) {
-    $container-&gt;register(new AppServiceProvider());
-});
+$app-&gt;register(new SecurityServiceProvider());
 
 // Add middleware
-$app-&gt;addMiddleware(new CorsMiddleware($corsConfig));
-$app-&gt;addMiddleware(new AuthenticationMiddleware($jwtValidator));
+$app-&gt;addMiddleware(new CorsMiddleware($app-&gt;config('cors') ?? []));
+$app-&gt;addMiddleware(new JsonBodyParserMiddleware());
 
 // Define routes
 $app-&gt;routes(function ($router) {
     $router-&gt;get('/', HomeController::class, 'index');
-    $router-&gt;apiResource('/api/users', UserController::class);
+    $router-&gt;group('/api', function ($router) {
+        $router-&gt;apiResource('/users', UserController::class);
+    }, middleware: [ApiAuthenticationMiddleware::class]);
 });
 
 $app-&gt;run();</code></pre>
@@ -158,6 +160,6 @@ $app-&gt;run();</code></pre>
     <div class="cta-links">
         <a href="/docs/getting-started" class="btn btn-primary btn-lg">Get Started</a>
         <a href="/docs" class="btn btn-outline btn-lg">Documentation</a>
-        <a href="https://github.com/melodic-dev/melodic-php" class="btn btn-outline btn-lg" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/MelodicDevelopment/melodic-php" class="btn btn-outline btn-lg" target="_blank" rel="noopener">GitHub</a>
     </div>
 </section>

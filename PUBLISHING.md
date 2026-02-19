@@ -1,9 +1,9 @@
 # Publishing Melodic Framework to Packagist
 
-This is a step-by-step guide for publishing `melodic/framework` so anyone can install it with:
+This is a step-by-step guide for publishing `melodicdev/framework` so anyone can install it with:
 
 ```bash
-composer require melodic/framework
+composer require melodicdev/framework
 ```
 
 ## Prerequisites
@@ -23,10 +23,10 @@ composer require melodic/framework
 1. Log in to Packagist
 2. Click **Submit** in the top navigation
 3. Paste your repository URL: `https://github.com/MelodicDevelopment/melodic-php`
-4. Click **Check** — Packagist reads your `composer.json` and shows the package name (`melodic/framework`)
+4. Click **Check** — Packagist reads your `composer.json` and shows the package name (`melodicdev/framework`)
 5. Click **Submit**
 
-Your package is now live at `https://packagist.org/packages/melodic/framework`.
+Your package is now live at `https://packagist.org/packages/melodicdev/framework`.
 
 ## Step 3: Set Up Auto-Update (GitHub Webhook)
 
@@ -82,10 +82,10 @@ From any other project directory:
 ```bash
 mkdir /tmp/test-melodic && cd /tmp/test-melodic
 composer init --no-interaction
-composer require melodic/framework
+composer require melodicdev/framework
 ```
 
-You should see Composer download `melodic/framework` and `firebase/php-jwt`. Then verify:
+You should see Composer download `melodicdev/framework` and `firebase/php-jwt`. Then verify:
 
 ```php
 <?php
@@ -126,7 +126,7 @@ That's it. Packagist picks up the new tag and users get it on their next `compos
 
 After publishing, your Packagist page shows:
 
-- **Package name**: melodic/framework
+- **Package name**: melodicdev/framework
 - **Description**: from composer.json
 - **Homepage**: https://php.melodic.dev
 - **Versions**: each git tag
@@ -155,6 +155,6 @@ The `.gitattributes` file ensures users only receive the essential files:
 | Tag a release | `git tag v1.0.0 && git push origin v1.0.0` |
 | List tags | `git tag -l` |
 | Delete a tag (local + remote) | `git tag -d v1.0.0 && git push origin :refs/tags/v1.0.0` |
-| Install from Packagist | `composer require melodic/framework` |
-| Install specific version | `composer require melodic/framework:^1.0` |
-| Install dev branch (no tag) | `composer require melodic/framework:dev-main` |
+| Install from Packagist | `composer require melodicdev/framework` |
+| Install specific version | `composer require melodicdev/framework:^1.0` |
+| Install dev branch (no tag) | `composer require melodicdev/framework:dev-main` |

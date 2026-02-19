@@ -1,5 +1,5 @@
 {
-	"name": "melodic/framework",
+	"name": "melodicdev/framework",
 	"description": "A modern PHP 8.2+ framework with CQRS, JWT authentication, and middleware pipeline",
 	"type": "library",
 	"license": "MIT",

@@ -103,7 +103,7 @@ Based on the answers, generate the full application. Use the framework's convent
 	"type": "project",
 	"require": {
 		"php": ">=8.2",
-		"melodic/framework": "*"
+		"melodicdev/framework": "*"
 	},
 	"autoload": {
 		"psr-4": {

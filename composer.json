@@ -32,7 +32,6 @@
 	},
 	"autoload-dev": {
 		"psr-4": {
-			"MelodicWeb\\": "web/php.melodic.dev/src/",
 			"Tests\\": "tests/"
 		}
 	},

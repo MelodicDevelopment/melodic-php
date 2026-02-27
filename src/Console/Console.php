@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Melodic\Console;
 
+use Melodic\Framework;
+
 class Console
 {
     /** @var array<string, CommandInterface> */
@@ -11,7 +13,7 @@ class Console
 
     private string $name = 'Melodic Console';
 
-    private string $version = '1.0.0';
+    private string $version = Framework::VERSION;
 
     public function register(CommandInterface $command): void
     {

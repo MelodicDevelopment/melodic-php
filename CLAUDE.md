@@ -227,6 +227,17 @@ vendor/bin/melodic make:entity Church                  # Generate 8 CQRS files f
 - **CQRS data access** — Query/Command objects executed via DbContext
 - **No facades, no mediator** — direct, explicit instantiation
 
+## Versioning & Publishing
+
+The framework version is tracked in `src/Framework.php` (`Framework::VERSION`). This is the single source of truth — the `Console` class reads it automatically.
+
+To publish a new release:
+1. Bump `Framework::VERSION` in `src/Framework.php` (follow semver: patch for fixes, minor for features, major for breaking changes)
+2. Commit and push the bump
+3. Tag with the same version: `git tag v{VERSION} && git push origin v{VERSION}`
+
+See `PUBLISHING.md` for full details.
+
 ## Getting Started
 
 ```bash

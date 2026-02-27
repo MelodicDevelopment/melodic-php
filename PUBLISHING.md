@@ -108,16 +108,34 @@ rm -rf /tmp/test-melodic
 
 ## Ongoing: Publishing New Versions
 
+The framework version is tracked in `src/Framework.php`:
+
+```php
+class Framework
+{
+    public const VERSION = '1.1.0';
+}
+```
+
+This is the single source of truth. The `Console` class reads it automatically for CLI output.
+
 Each time you want to release:
 
+1. **Bump the version** in `src/Framework.php` following semver
+2. **Commit and push** the version bump
+3. **Tag and push** using the same version from `Framework::VERSION`
+
 ```bash
-# Commit your changes
-git add -A && git commit -m "Your changes"
+# 1. Update Framework::VERSION in src/Framework.php to the new version
+
+# 2. Commit the bump
+git add src/Framework.php
+git commit -m "Bump version to v1.2.0"
 git push
 
-# Tag and push the new version
-git tag v1.1.0
-git push origin v1.1.0
+# 3. Tag and push (version must match Framework::VERSION)
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
 That's it. Packagist picks up the new tag and users get it on their next `composer update`.

@@ -18,7 +18,7 @@ class MakeProjectCommand extends Command
         $name = $args[0] ?? null;
 
         if ($name === null) {
-            $this->error('Usage: make:project <name> [--type=api|mvc]');
+            $this->error('Usage: make:project <name> [--type=full|api|mvc]');
             return 1;
         }
 
@@ -31,10 +31,11 @@ class MakeProjectCommand extends Command
         }
 
         $namespace = Stub::pascalCase($name);
+        $hasMvc = in_array($type, ['full', 'mvc'], true);
 
         $this->writeln("Creating {$type} project '{$name}'...");
 
-        $this->createDirectories($projectDir, $type);
+        $this->createDirectories($projectDir, $hasMvc);
         $this->createComposerJson($projectDir, $name, $namespace);
         $this->createConfig($projectDir);
         $this->createGitignore($projectDir);
@@ -43,7 +44,7 @@ class MakeProjectCommand extends Command
         $this->createConsole($projectDir, $namespace);
         $this->createServiceProvider($projectDir, $namespace);
 
-        if ($type === 'mvc') {
+        if ($hasMvc) {
             $this->createMvcFiles($projectDir, $namespace);
         }
 
@@ -54,7 +55,7 @@ class MakeProjectCommand extends Command
         $this->writeln("  cd {$name}");
         $this->writeln('  composer install');
 
-        if ($type === 'mvc') {
+        if ($hasMvc) {
             $this->writeln('  php -S localhost:8080 -t public');
         }
 
@@ -66,16 +67,16 @@ class MakeProjectCommand extends Command
         foreach ($args as $arg) {
             if (str_starts_with($arg, '--type=')) {
                 $type = substr($arg, 7);
-                if (in_array($type, ['api', 'mvc'], true)) {
+                if (in_array($type, ['full', 'api', 'mvc'], true)) {
                     return $type;
                 }
             }
         }
 
-        return 'api';
+        return 'full';
     }
 
-    private function createDirectories(string $dir, string $type): void
+    private function createDirectories(string $dir, bool $hasMvc): void
     {
         $dirs = [
             'config',
@@ -92,7 +93,7 @@ class MakeProjectCommand extends Command
             'tests',
         ];
 
-        if ($type === 'mvc') {
+        if ($hasMvc) {
             $dirs[] = 'views/layouts';
             $dirs[] = 'views/home';
         }
@@ -135,7 +136,11 @@ class MakeProjectCommand extends Command
 
     private function createIndexPhp(string $dir, string $namespace, string $type): void
     {
-        $stub = $type === 'mvc' ? self::INDEX_MVC_STUB : self::INDEX_API_STUB;
+        $stub = match ($type) {
+            'api' => self::INDEX_API_STUB,
+            'mvc' => self::INDEX_MVC_STUB,
+            default => self::INDEX_FULL_STUB,
+        };
         $content = Stub::render($stub, ['namespace' => $namespace]);
         file_put_contents($dir . '/public/index.php', $content);
     }
@@ -291,6 +296,44 @@ $app->addMiddleware(new JsonBodyParserMiddleware());
 
 $app->routes(function ($router) {
     $router->get('/', HomeController::class, 'index');
+});
+
+$app->run();
+PHP;
+
+    private const INDEX_FULL_STUB = <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use Melodic\Core\Application;
+use Melodic\Http\Middleware\CorsMiddleware;
+use Melodic\Http\Middleware\JsonBodyParserMiddleware;
+use {namespace}\Controllers\HomeController;
+use {namespace}\Providers\AppServiceProvider;
+
+$app = new Application(__DIR__ . '/..');
+$app->loadConfig('config/config.json');
+
+if (file_exists($app->getBasePath() . '/config/config.local.json')) {
+    $app->loadConfig('config/config.local.json');
+}
+
+$app->register(new AppServiceProvider());
+
+$app->addMiddleware(new CorsMiddleware($app->config('cors') ?? []));
+$app->addMiddleware(new JsonBodyParserMiddleware());
+
+$app->routes(function ($router) {
+    // MVC routes
+    $router->get('/', HomeController::class, 'index');
+
+    // API routes
+    // $router->group('/api', function ($router) {
+    //     $router->apiResource('/users', UserController::class);
+    // });
 });
 
 $app->run();

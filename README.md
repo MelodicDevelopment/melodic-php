@@ -977,12 +977,10 @@ If you need to integrate third-party PSR-7 middleware, you can write thin adapte
 
 ## Recommended Application Structure
 
-When building an application with Melodic, use this canonical directory layout:
-
-### API Project
+When building an application with Melodic, use this canonical directory layout. The default project type (`full`) includes both MVC views and API routing — most real-world apps need both.
 
 ```
-my-api/
+my-app/
 ├── composer.json               # PSR-4: App\ → src/
 ├── config/
 │   ├── config.json
@@ -993,7 +991,7 @@ my-api/
 ├── bin/
 │   └── console                 # CLI entry point
 ├── src/
-│   ├── Controllers/            # ApiController subclasses
+│   ├── Controllers/            # ApiController and MvcController subclasses
 │   ├── Services/               # Service subclasses (business logic)
 │   ├── DTO/                    # Models extending Melodic\Data\Model
 │   ├── Data/
@@ -1003,28 +1001,38 @@ my-api/
 │   ├── Middleware/              # Custom middleware
 │   └── Providers/
 │       └── AppServiceProvider.php
+├── views/
+│   ├── layouts/
+│   │   └── main.phtml          # Base HTML layout
+│   └── home/
+│       └── index.phtml         # Home page template
 ├── storage/
 │   ├── cache/
 │   └── logs/
 └── tests/
 ```
 
-### MVC Project
+API and MVC controllers coexist in the same `src/Controllers/` directory. Use route groups to organize them:
 
-MVC projects additionally get `views/` directories:
+```php
+$app->routes(function ($router) {
+    // MVC routes
+    $router->get('/', HomeController::class, 'index');
 
+    // API routes
+    $router->group('/api', function ($router) {
+        $router->apiResource('/users', UserController::class);
+    });
+});
 ```
-my-site/
-├── ...                         # Same as API
-├── src/
-│   ├── Controllers/            # MvcController subclasses
-│   └── ...
-└── views/
-    ├── layouts/
-    │   └── main.phtml
-    └── home/
-        └── index.phtml
-```
+
+### Project Types
+
+| Type | Flag | Description |
+|---|---|---|
+| Full (default) | `--type=full` or omit | MVC views + API routing — recommended for most apps |
+| API only | `--type=api` | No views directory, API-only `index.php` |
+| MVC only | `--type=mvc` | Views + HomeController, MVC-only `index.php` |
 
 ### Naming Conventions
 
@@ -1042,14 +1050,17 @@ my-site/
 The `melodic` CLI generates projects and entity CQRS scaffolding:
 
 ```bash
-# Create a new API project
-vendor/bin/melodic make:project my-api
+# Create a new project (full — MVC + API, the default)
+vendor/bin/melodic make:project my-app
 
-# Create a new MVC project
+# API-only project
+vendor/bin/melodic make:project my-api --type=api
+
+# MVC-only project
 vendor/bin/melodic make:project my-site --type=mvc
 
 # Generate entity files (DTO, queries, commands, service, controller)
-cd my-api
+cd my-app
 vendor/bin/melodic make:entity Church
 ```
 

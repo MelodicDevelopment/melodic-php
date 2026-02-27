@@ -27,17 +27,17 @@ class MakeProjectCommandTest extends TestCase
         $this->removeDir($this->tempDir);
     }
 
-    public function testMakeProjectCreatesApiStructure(): void
+    public function testMakeProjectDefaultCreatesFullStructure(): void
     {
         $console = $this->createConsole();
 
         ob_start();
-        $exitCode = $console->run(['melodic', 'make:project', 'test-api']);
+        $exitCode = $console->run(['melodic', 'make:project', 'test-app']);
         ob_get_clean();
 
         $this->assertSame(0, $exitCode);
 
-        $projectDir = $this->tempDir . '/test-api';
+        $projectDir = $this->tempDir . '/test-app';
         $this->assertDirectoryExists($projectDir);
         $this->assertDirectoryExists($projectDir . '/config');
         $this->assertDirectoryExists($projectDir . '/public');
@@ -52,8 +52,65 @@ class MakeProjectCommandTest extends TestCase
         $this->assertDirectoryExists($projectDir . '/storage/logs');
         $this->assertDirectoryExists($projectDir . '/tests');
 
-        // Should NOT have MVC dirs
+        // Default (full) includes views and HomeController
+        $this->assertDirectoryExists($projectDir . '/views/layouts');
+        $this->assertDirectoryExists($projectDir . '/views/home');
+        $this->assertFileExists($projectDir . '/views/layouts/main.phtml');
+        $this->assertFileExists($projectDir . '/views/home/index.phtml');
+        $this->assertFileExists($projectDir . '/src/Controllers/HomeController.php');
+    }
+
+    public function testMakeProjectDefaultIndexHasMvcAndApiRoutes(): void
+    {
+        $console = $this->createConsole();
+
+        ob_start();
+        $console->run(['melodic', 'make:project', 'full-app']);
+        ob_get_clean();
+
+        $indexPhp = file_get_contents($this->tempDir . '/full-app/public/index.php');
+        $this->assertStringContainsString('HomeController', $indexPhp);
+        $this->assertStringContainsString("'/'", $indexPhp);
+        $this->assertStringContainsString('API routes', $indexPhp);
+    }
+
+    public function testMakeProjectApiTypeHasNoViews(): void
+    {
+        $console = $this->createConsole();
+
+        ob_start();
+        $exitCode = $console->run(['melodic', 'make:project', 'api-only', '--type=api']);
+        ob_get_clean();
+
+        $this->assertSame(0, $exitCode);
+
+        $projectDir = $this->tempDir . '/api-only';
         $this->assertDirectoryDoesNotExist($projectDir . '/views');
+        $this->assertFileDoesNotExist($projectDir . '/src/Controllers/HomeController.php');
+
+        $indexPhp = file_get_contents($projectDir . '/public/index.php');
+        $this->assertStringNotContainsString('HomeController', $indexPhp);
+    }
+
+    public function testMakeProjectMvcTypeCreatesViewsAndHomeController(): void
+    {
+        $console = $this->createConsole();
+
+        ob_start();
+        $exitCode = $console->run(['melodic', 'make:project', 'my-site', '--type=mvc']);
+        ob_get_clean();
+
+        $this->assertSame(0, $exitCode);
+
+        $projectDir = $this->tempDir . '/my-site';
+        $this->assertDirectoryExists($projectDir . '/views/layouts');
+        $this->assertDirectoryExists($projectDir . '/views/home');
+        $this->assertFileExists($projectDir . '/views/layouts/main.phtml');
+        $this->assertFileExists($projectDir . '/views/home/index.phtml');
+        $this->assertFileExists($projectDir . '/src/Controllers/HomeController.php');
+
+        // HomeController should not have a .gitkeep (it now has a real file)
+        $this->assertFileDoesNotExist($projectDir . '/src/Controllers/.gitkeep');
     }
 
     public function testMakeProjectCreatesRequiredFiles(): void
@@ -92,40 +149,6 @@ class MakeProjectCommandTest extends TestCase
         $this->assertSame('src/', $composerJson['autoload']['psr-4']['MyApp\\']);
     }
 
-    public function testMakeProjectMvcTypeCreatesViewsAndHomeController(): void
-    {
-        $console = $this->createConsole();
-
-        ob_start();
-        $exitCode = $console->run(['melodic', 'make:project', 'my-site', '--type=mvc']);
-        ob_get_clean();
-
-        $this->assertSame(0, $exitCode);
-
-        $projectDir = $this->tempDir . '/my-site';
-        $this->assertDirectoryExists($projectDir . '/views/layouts');
-        $this->assertDirectoryExists($projectDir . '/views/home');
-        $this->assertFileExists($projectDir . '/views/layouts/main.phtml');
-        $this->assertFileExists($projectDir . '/views/home/index.phtml');
-        $this->assertFileExists($projectDir . '/src/Controllers/HomeController.php');
-
-        // HomeController should not have a .gitkeep (it now has a real file)
-        $this->assertFileDoesNotExist($projectDir . '/src/Controllers/.gitkeep');
-    }
-
-    public function testMakeProjectMvcIndexPhpHasHomeControllerRoute(): void
-    {
-        $console = $this->createConsole();
-
-        ob_start();
-        $console->run(['melodic', 'make:project', 'mvc-app', '--type=mvc']);
-        ob_get_clean();
-
-        $indexPhp = file_get_contents($this->tempDir . '/mvc-app/public/index.php');
-        $this->assertStringContainsString('HomeController', $indexPhp);
-        $this->assertStringContainsString("'/'", $indexPhp);
-    }
-
     public function testMakeProjectRefusesToOverwriteExistingDirectory(): void
     {
         mkdir($this->tempDir . '/existing-project', 0755, true);
@@ -154,10 +177,11 @@ class MakeProjectCommandTest extends TestCase
         $console = $this->createConsole();
 
         ob_start();
-        $console->run(['melodic', 'make:project', 'gitkeep-test']);
+        $console->run(['melodic', 'make:project', 'gitkeep-test', '--type=api']);
         ob_get_clean();
 
         $projectDir = $this->tempDir . '/gitkeep-test';
+        $this->assertFileExists($projectDir . '/src/Controllers/.gitkeep');
         $this->assertFileExists($projectDir . '/src/Services/.gitkeep');
         $this->assertFileExists($projectDir . '/src/DTO/.gitkeep');
         $this->assertFileExists($projectDir . '/storage/cache/.gitkeep');

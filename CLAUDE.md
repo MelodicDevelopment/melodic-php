@@ -165,10 +165,10 @@ return $this->view('home/index', ['message' => 'Hello']);
 
 ## Application Structure (for projects built with Melodic)
 
-When generating code for applications that use this framework, follow this canonical layout:
+When generating code for applications that use this framework, follow this canonical layout. The default project type (`full`) includes both MVC views and API routing.
 
 ```
-my-api/
+my-app/
 ├── composer.json               # PSR-4: App\ → src/
 ├── config/
 │   ├── config.json
@@ -179,7 +179,7 @@ my-api/
 ├── bin/
 │   └── console                 # CLI entry point
 ├── src/
-│   ├── Controllers/            # ApiController or MvcController subclasses
+│   ├── Controllers/            # ApiController and MvcController subclasses
 │   ├── Services/               # Service subclasses (business logic layer)
 │   ├── DTO/                    # Models extending Melodic\Data\Model (flat)
 │   ├── Data/
@@ -189,13 +189,16 @@ my-api/
 │   ├── Middleware/              # Custom MiddlewareInterface implementations
 │   └── Providers/
 │       └── AppServiceProvider.php
+├── views/                      # MVC templates (full and mvc types)
+│   ├── layouts/
+│   └── {page}/
 ├── storage/
 │   ├── cache/
 │   └── logs/
 └── tests/
 ```
 
-MVC projects additionally have `views/layouts/` and `views/{page}/`.
+Project types: `full` (default, MVC + API), `api` (no views), `mvc` (views only).
 
 ### Naming Conventions for Application Code
 
@@ -211,8 +214,9 @@ MVC projects additionally have `views/layouts/` and `views/{page}/`.
 ### Scaffolding Commands
 
 ```bash
-vendor/bin/melodic make:project my-api                 # API project
-vendor/bin/melodic make:project my-site --type=mvc     # MVC project
+vendor/bin/melodic make:project my-app                 # Full project (MVC + API, default)
+vendor/bin/melodic make:project my-api --type=api      # API-only project
+vendor/bin/melodic make:project my-site --type=mvc     # MVC-only project
 vendor/bin/melodic make:entity Church                  # Generate 8 CQRS files for an entity
 ```
 

@@ -1,0 +1,36 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// Autoload: framework development (repo checkout) or installed as a dependency
+$autoloadPaths = [
+    __DIR__ . '/../vendor/autoload.php',       // framework repo
+    __DIR__ . '/../../../autoload.php',         // installed via composer (vendor/bin/)
+];
+
+$loaded = false;
+foreach ($autoloadPaths as $autoload) {
+    if (file_exists($autoload)) {
+        require_once $autoload;
+        $loaded = true;
+        break;
+    }
+}
+
+if (!$loaded) {
+    fwrite(STDERR, "Autoloader not found. Run 'composer install' first." . PHP_EOL);
+    exit(1);
+}
+
+use Melodic\Console\Console;
+use Melodic\Console\Make\MakeProjectCommand;
+use Melodic\Console\Make\MakeEntityCommand;
+
+$console = new Console();
+$console->setName('Melodic');
+
+$console->register(new MakeProjectCommand());
+$console->register(new MakeEntityCommand());
+
+exit($console->run($argv));

@@ -163,6 +163,61 @@ return $this->view('home/index', ['message' => 'Hello']);
 // Layout uses: <?= $this->renderBody() ?> and <?= $this->renderSection('scripts') ?>
 ```
 
+## Application Structure (for projects built with Melodic)
+
+When generating code for applications that use this framework, follow this canonical layout:
+
+```
+my-api/
+├── composer.json               # PSR-4: App\ → src/
+├── config/
+│   ├── config.json
+│   └── config.local.json       # gitignored
+├── public/
+│   ├── index.php               # Entry point
+│   └── .htaccess
+├── bin/
+│   └── console                 # CLI entry point
+├── src/
+│   ├── Controllers/            # ApiController or MvcController subclasses
+│   ├── Services/               # Service subclasses (business logic layer)
+│   ├── DTO/                    # Models extending Melodic\Data\Model (flat)
+│   ├── Data/
+│   │   └── {Entity}/
+│   │       ├── Queries/        # QueryInterface implementations
+│   │       └── Commands/       # CommandInterface implementations
+│   ├── Middleware/              # Custom MiddlewareInterface implementations
+│   └── Providers/
+│       └── AppServiceProvider.php
+├── storage/
+│   ├── cache/
+│   └── logs/
+└── tests/
+```
+
+MVC projects additionally have `views/layouts/` and `views/{page}/`.
+
+### Naming Conventions for Application Code
+
+| Type | Location | Naming | Example |
+|---|---|---|---|
+| DTO / Model | `src/DTO/` | `{Entity}Model` | `ChurchModel` |
+| Query | `src/Data/{Entity}/Queries/` | `Get{Entity}ByIdQuery`, `GetAll{Plural}Query` | `GetChurchByIdQuery` |
+| Command | `src/Data/{Entity}/Commands/` | `Create{Entity}Command`, `Update{Entity}Command`, `Delete{Entity}Command` | `CreateChurchCommand` |
+| Service | `src/Services/` | `{Entity}Service` | `ChurchService` |
+| Controller | `src/Controllers/` | `{Entity}Controller` | `ChurchController` |
+| Provider | `src/Providers/` | `{Name}ServiceProvider` | `AppServiceProvider` |
+
+### Scaffolding Commands
+
+```bash
+vendor/bin/melodic make:project my-api                 # API project
+vendor/bin/melodic make:project my-site --type=mvc     # MVC project
+vendor/bin/melodic make:entity Church                  # Generate 8 CQRS files for an entity
+```
+
+`make:entity` generates: DTO model, 2 queries (GetAll, GetById), 3 commands (Create, Update, Delete), service, and controller.
+
 ## Conventions
 
 - **Never add Co-Authored-By, Signed-off-by, or any AI/contributor attribution to commits**

@@ -975,6 +975,96 @@ PSR-7 was not adopted because its full interface surface — `StreamInterface`, 
 
 If you need to integrate third-party PSR-7 middleware, you can write thin adapter classes that map between `Melodic\Http\Request`/`Response` and the PSR-7 interfaces.
 
+## Recommended Application Structure
+
+When building an application with Melodic, use this canonical directory layout:
+
+### API Project
+
+```
+my-api/
+├── composer.json               # PSR-4: App\ → src/
+├── config/
+│   ├── config.json
+│   └── config.local.json       # gitignored
+├── public/
+│   ├── index.php               # Entry point
+│   └── .htaccess
+├── bin/
+│   └── console                 # CLI entry point
+├── src/
+│   ├── Controllers/            # ApiController subclasses
+│   ├── Services/               # Service subclasses (business logic)
+│   ├── DTO/                    # Models extending Melodic\Data\Model
+│   ├── Data/
+│   │   └── {Entity}/
+│   │       ├── Queries/        # QueryInterface implementations
+│   │       └── Commands/       # CommandInterface implementations
+│   ├── Middleware/              # Custom middleware
+│   └── Providers/
+│       └── AppServiceProvider.php
+├── storage/
+│   ├── cache/
+│   └── logs/
+└── tests/
+```
+
+### MVC Project
+
+MVC projects additionally get `views/` directories:
+
+```
+my-site/
+├── ...                         # Same as API
+├── src/
+│   ├── Controllers/            # MvcController subclasses
+│   └── ...
+└── views/
+    ├── layouts/
+    │   └── main.phtml
+    └── home/
+        └── index.phtml
+```
+
+### Naming Conventions
+
+| Type | Location | Naming | Example |
+|---|---|---|---|
+| DTO / Model | `src/DTO/` | `{Entity}Model` | `ChurchModel` |
+| Query | `src/Data/{Entity}/Queries/` | `Get{Entity}ByIdQuery` | `GetChurchByIdQuery` |
+| Command | `src/Data/{Entity}/Commands/` | `Create{Entity}Command` | `CreateChurchCommand` |
+| Service | `src/Services/` | `{Entity}Service` | `ChurchService` |
+| Controller | `src/Controllers/` | `{Entity}Controller` | `ChurchController` |
+| Provider | `src/Providers/` | `{Name}ServiceProvider` | `AppServiceProvider` |
+
+### Scaffolding
+
+The `melodic` CLI generates projects and entity CQRS scaffolding:
+
+```bash
+# Create a new API project
+vendor/bin/melodic make:project my-api
+
+# Create a new MVC project
+vendor/bin/melodic make:project my-site --type=mvc
+
+# Generate entity files (DTO, queries, commands, service, controller)
+cd my-api
+vendor/bin/melodic make:entity Church
+```
+
+`make:entity` generates 8 files per entity following the CQRS pattern:
+- `src/DTO/{Entity}Model.php`
+- `src/Data/{Entity}/Queries/GetAll{Plural}Query.php`
+- `src/Data/{Entity}/Queries/Get{Entity}ByIdQuery.php`
+- `src/Data/{Entity}/Commands/Create{Entity}Command.php`
+- `src/Data/{Entity}/Commands/Update{Entity}Command.php`
+- `src/Data/{Entity}/Commands/Delete{Entity}Command.php`
+- `src/Services/{Entity}Service.php`
+- `src/Controllers/{Entity}Controller.php`
+
+Existing files are never overwritten — the command skips any file that already exists.
+
 ## Dependencies
 
 | Package | Purpose |

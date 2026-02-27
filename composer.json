@@ -39,6 +39,9 @@
 		"test": "phpunit",
 		"analyse": "phpstan analyse"
 	},
+	"bin": [
+		"bin/melodic"
+	],
 	"config": {
 		"sort-packages": true
 	}

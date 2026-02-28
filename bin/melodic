@@ -24,13 +24,15 @@ if (!$loaded) {
 }
 
 use Melodic\Console\Console;
-use Melodic\Console\Make\MakeProjectCommand;
+use Melodic\Console\Make\MakeConfigCommand;
 use Melodic\Console\Make\MakeEntityCommand;
+use Melodic\Console\Make\MakeProjectCommand;
 
 $console = new Console();
 $console->setName('Melodic');
 
 $console->register(new MakeProjectCommand());
 $console->register(new MakeEntityCommand());
+$console->register(new MakeConfigCommand());
 
 exit($console->run($argv));

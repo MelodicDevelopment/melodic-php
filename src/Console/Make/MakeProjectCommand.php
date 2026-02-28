@@ -122,6 +122,8 @@ class MakeProjectCommand extends Command
     private function createConfig(string $dir): void
     {
         file_put_contents($dir . '/config/config.json', self::CONFIG_STUB);
+        file_put_contents($dir . '/config/config.qa.json', self::CONFIG_QA_STUB);
+        file_put_contents($dir . '/config/config.pd.json', self::CONFIG_PD_STUB);
     }
 
     private function createGitignore(string $dir): void
@@ -204,6 +206,9 @@ JSON;
 
     private const CONFIG_STUB = <<<'JSON'
 {
+    "app": {
+        "debug": true
+    },
     "database": {
         "dsn": "sqlite:storage/database.sqlite"
     },
@@ -220,13 +225,43 @@ JSON;
 }
 JSON;
 
+    private const CONFIG_QA_STUB = <<<'JSON'
+{
+    "app": {
+        "debug": true
+    },
+    "database": {
+        "dsn": ""
+    },
+    "jwt": {
+        "secret": "",
+        "algorithm": "HS256"
+    }
+}
+JSON;
+
+    private const CONFIG_PD_STUB = <<<'JSON'
+{
+    "app": {
+        "debug": false
+    },
+    "database": {
+        "dsn": ""
+    },
+    "jwt": {
+        "secret": "",
+        "algorithm": "HS256"
+    }
+}
+JSON;
+
     private const GITIGNORE_STUB = <<<'TXT'
 /vendor/
 /storage/cache/*
 /storage/logs/*
 !storage/cache/.gitkeep
 !storage/logs/.gitkeep
-config/config.local.json
+config/config.dev.json
 .phpunit.cache
 .env
 TXT;
@@ -251,11 +286,7 @@ use Melodic\Http\Middleware\JsonBodyParserMiddleware;
 use {namespace}\Providers\AppServiceProvider;
 
 $app = new Application(__DIR__ . '/..');
-$app->loadConfig('config/config.json');
-
-if (file_exists($app->getBasePath() . '/config/config.local.json')) {
-    $app->loadConfig('config/config.local.json');
-}
+$app->loadEnvironmentConfig();
 
 $app->register(new AppServiceProvider());
 
@@ -283,11 +314,7 @@ use {namespace}\Controllers\HomeController;
 use {namespace}\Providers\AppServiceProvider;
 
 $app = new Application(__DIR__ . '/..');
-$app->loadConfig('config/config.json');
-
-if (file_exists($app->getBasePath() . '/config/config.local.json')) {
-    $app->loadConfig('config/config.local.json');
-}
+$app->loadEnvironmentConfig();
 
 $app->register(new AppServiceProvider());
 
@@ -315,11 +342,7 @@ use {namespace}\Controllers\HomeController;
 use {namespace}\Providers\AppServiceProvider;
 
 $app = new Application(__DIR__ . '/..');
-$app->loadConfig('config/config.json');
-
-if (file_exists($app->getBasePath() . '/config/config.local.json')) {
-    $app->loadConfig('config/config.local.json');
-}
+$app->loadEnvironmentConfig();
 
 $app->register(new AppServiceProvider());
 

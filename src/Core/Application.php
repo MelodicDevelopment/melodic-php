@@ -55,6 +55,41 @@ class Application
         return $this;
     }
 
+    public function loadEnvironmentConfig(string $configDir = 'config'): self
+    {
+        $basePath = $this->basePath . '/' . $configDir;
+
+        // Always load base config
+        $this->configuration->loadFile($basePath . '/config.json');
+
+        // Detect environment
+        $env = getenv('APP_ENV') ?: 'dev';
+
+        // Load environment-specific overrides (skip for 'dev')
+        if ($env !== 'dev') {
+            $envPath = $basePath . '/config.' . $env . '.json';
+            if (file_exists($envPath)) {
+                $this->configuration->loadFile($envPath);
+            }
+        }
+
+        // Load local developer overrides (always gitignored)
+        $localPath = $basePath . '/config.dev.json';
+        if (file_exists($localPath)) {
+            $this->configuration->loadFile($localPath);
+        }
+
+        // Set environment in config for runtime access
+        $this->configuration->set('app.environment', $env);
+
+        return $this;
+    }
+
+    public function getEnvironment(): string
+    {
+        return $this->configuration->get('app.environment', 'dev');
+    }
+
     public function config(?string $key = null, mixed $default = null): mixed
     {
         if ($key === null) {

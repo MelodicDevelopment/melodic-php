@@ -105,7 +105,7 @@ class UserService extends Service {
 
 ```php
 $app = new Application(__DIR__);
-$app->loadConfig('config/config.json');
+$app->loadEnvironmentConfig();  // loads config.json → config.{APP_ENV}.json → config.dev.json
 $app->addMiddleware(new CorsMiddleware($corsConfig));
 $app->addMiddleware(new AuthenticationMiddleware($jwtValidator));
 $app->services(function(Container $c) { /* register bindings */ });
@@ -114,6 +114,20 @@ $app->routes(function(Router $r) {
 });
 $app->run();
 ```
+
+### Environment Configuration
+
+```
+config.json  →  config.{APP_ENV}.json  →  config.dev.json
+  (base)         (env overrides)          (dev overrides, gitignored)
+```
+
+- `APP_ENV` env var selects the environment file (e.g., `qa` → `config.qa.json`)
+- When `APP_ENV` is unset or `dev`, no environment file is loaded (just base + dev)
+- `config.dev.json` is always loaded last if it exists (always gitignored)
+- `app.environment` is auto-set in config so code can check the current env via `$app->getEnvironment()`
+
+See [docs/configuration.md](docs/configuration.md) for full details.
 
 ### DI Container
 
@@ -218,9 +232,11 @@ vendor/bin/melodic make:project my-app                 # Full project (MVC + API
 vendor/bin/melodic make:project my-api --type=api      # API-only project
 vendor/bin/melodic make:project my-site --type=mvc     # MVC-only project
 vendor/bin/melodic make:entity Church                  # Generate 8 CQRS files for an entity
+vendor/bin/melodic make:config staging                 # Create config/config.staging.json
 ```
 
 `make:entity` generates: DTO model, 2 queries (GetAll, GetById), 3 commands (Create, Update, Delete), service, and controller.
+`make:config` creates an environment-specific config file. See [docs/configuration.md](docs/configuration.md).
 
 ## Conventions
 

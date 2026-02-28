@@ -74,6 +74,66 @@ class MakeProjectCommandTest extends TestCase
         $this->assertStringContainsString('API routes', $indexPhp);
     }
 
+    public function testMakeProjectIndexUsesLoadEnvironmentConfig(): void
+    {
+        $console = $this->createConsole();
+
+        ob_start();
+        $console->run(['melodic', 'make:project', 'env-app']);
+        ob_get_clean();
+
+        $indexPhp = file_get_contents($this->tempDir . '/env-app/public/index.php');
+        $this->assertStringContainsString('loadEnvironmentConfig()', $indexPhp);
+        $this->assertStringNotContainsString('config.local.json', $indexPhp);
+    }
+
+    public function testMakeProjectCreatesEnvironmentConfigFiles(): void
+    {
+        $console = $this->createConsole();
+
+        ob_start();
+        $console->run(['melodic', 'make:project', 'cfg-app']);
+        ob_get_clean();
+
+        $projectDir = $this->tempDir . '/cfg-app';
+        $this->assertFileExists($projectDir . '/config/config.json');
+        $this->assertFileExists($projectDir . '/config/config.qa.json');
+        $this->assertFileExists($projectDir . '/config/config.pd.json');
+
+        // Base config should have app section
+        $baseConfig = json_decode(file_get_contents($projectDir . '/config/config.json'), true);
+        $this->assertArrayHasKey('app', $baseConfig);
+        $this->assertTrue($baseConfig['app']['debug']);
+
+        // PD config should have debug off
+        $pdConfig = json_decode(file_get_contents($projectDir . '/config/config.pd.json'), true);
+        $this->assertFalse($pdConfig['app']['debug']);
+    }
+
+    public function testMakeProjectGitignoreHasDevConfig(): void
+    {
+        $console = $this->createConsole();
+
+        ob_start();
+        $console->run(['melodic', 'make:project', 'gi-app']);
+        ob_get_clean();
+
+        $gitignore = file_get_contents($this->tempDir . '/gi-app/.gitignore');
+        $this->assertStringContainsString('config/config.dev.json', $gitignore);
+    }
+
+    public function testMakeProjectApiIndexUsesLoadEnvironmentConfig(): void
+    {
+        $console = $this->createConsole();
+
+        ob_start();
+        $console->run(['melodic', 'make:project', 'api-env', '--type=api']);
+        ob_get_clean();
+
+        $indexPhp = file_get_contents($this->tempDir . '/api-env/public/index.php');
+        $this->assertStringContainsString('loadEnvironmentConfig()', $indexPhp);
+    }
+
     public function testMakeProjectApiTypeHasNoViews(): void
     {
         $console = $this->createConsole();

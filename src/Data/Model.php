@@ -7,7 +7,7 @@ namespace Melodic\Data;
 use ReflectionClass;
 use ReflectionProperty;
 
-class Model
+class Model implements \JsonSerializable
 {
     public static function fromArray(array $data): static
     {
@@ -15,8 +15,15 @@ class Model
         $instance = $reflector->newInstanceWithoutConstructor();
 
         foreach ($data as $key => $value) {
-            if ($reflector->hasProperty($key)) {
-                $property = $reflector->getProperty($key);
+            // Try the key as-is (PascalCase from DB), then ucfirst (camelCase from frontend)
+            $propertyName = match (true) {
+                $reflector->hasProperty($key) => $key,
+                $reflector->hasProperty(ucfirst($key)) => ucfirst($key),
+                default => null,
+            };
+
+            if ($propertyName !== null) {
+                $property = $reflector->getProperty($propertyName);
                 $property->setValue($instance, $value);
             }
         }
@@ -32,10 +39,15 @@ class Model
 
         foreach ($properties as $property) {
             if ($property->isInitialized($this)) {
-                $result[$property->getName()] = $property->getValue($this);
+                $result[lcfirst($property->getName())] = $property->getValue($this);
             }
         }
 
         return $result;
+    }
+
+    public function jsonSerialize(): mixed
+    {
+        return $this->toArray();
     }
 }

@@ -9,42 +9,38 @@ class Response
     private array $cookies = [];
 
     public function __construct(
-        private readonly int $statusCode = 200,
-        private readonly string $body = '',
-        private readonly array $headers = [],
+        private int $statusCode = 200,
+        private string $body = '',
+        private array $headers = [],
     ) {}
 
-    public function withStatus(int $code): self
+    public function withStatus(int $code): static
     {
-        $response = new self($code, $this->body, $this->headers);
-        $response->cookies = $this->cookies;
+        $response = clone $this;
+        $response->statusCode = $code;
 
         return $response;
     }
 
-    public function withHeader(string $name, string $value): self
+    public function withHeader(string $name, string $value): static
     {
-        $headers = $this->headers;
-        $headers[$name] = $value;
-
-        $response = new self($this->statusCode, $this->body, $headers);
-        $response->cookies = $this->cookies;
+        $response = clone $this;
+        $response->headers[$name] = $value;
 
         return $response;
     }
 
-    public function withBody(string $body): self
+    public function withBody(string $body): static
     {
-        $response = new self($this->statusCode, $body, $this->headers);
-        $response->cookies = $this->cookies;
+        $response = clone $this;
+        $response->body = $body;
 
         return $response;
     }
 
-    public function withCookie(string $name, string $value, array $options = []): self
+    public function withCookie(string $name, string $value, array $options = []): static
     {
-        $response = new self($this->statusCode, $this->body, $this->headers);
-        $response->cookies = $this->cookies;
+        $response = clone $this;
         $response->cookies[$name] = [
             'value' => $value,
             'expires' => $options['expires'] ?? 0,

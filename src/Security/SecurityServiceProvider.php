@@ -81,6 +81,27 @@ class SecurityServiceProvider extends ServiceProvider
             );
         });
 
+        $container->singleton(RefreshTokenConfig::class, function (Container $c) {
+            /** @var Configuration $config */
+            $config = $c->get(Configuration::class);
+
+            return RefreshTokenConfig::fromArray($config->get('auth.refreshToken', []));
+        });
+
+        $container->singleton(RefreshTokenService::class, function (Container $c) {
+            return new RefreshTokenService(
+                $c->get(RefreshTokenRepositoryInterface::class),
+                $c->get(RefreshTokenConfig::class),
+            );
+        });
+
+        $container->singleton(RefreshTokenMiddleware::class, function (Container $c) {
+            return new RefreshTokenMiddleware(
+                $c->get(RefreshTokenService::class),
+                $c->get(RefreshTokenConfig::class),
+            );
+        });
+
         $container->singleton(ApiAuthenticationMiddleware::class, function (Container $c) {
             return new ApiAuthenticationMiddleware(
                 $c->get(AuthConfig::class),

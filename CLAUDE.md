@@ -42,7 +42,7 @@ melodic-php/
 │   ├── Routing/
 │   │   ├── Route.php                    # Method + pattern + controller/action
 │   │   ├── Router.php                   # Registration, groups, apiResource()
-│   │   └── RoutingMiddleware.php        # Resolves route → DI → controller action
+│   │   └── RoutingMiddleware.php        # Resolves route → DI → controller action + model binding
 │   ├── Controller/
 │   │   ├── Controller.php               # Abstract: json(), created(), noContent(), etc.
 │   │   ├── ApiController.php            # getUserContext() from JWT
@@ -151,6 +151,26 @@ $router->group('/api', function($r) {
     $r->apiResource('/users', UserController::class);
 }, middleware: [AuthorizationMiddleware::class]);
 ```
+
+### Automatic Model Binding
+
+Controller action parameters typed as a `Model` subclass are automatically hydrated from the request body and validated. If validation fails, a 400 JSON response is returned before the controller is called.
+
+```php
+// Model subclass with validation attributes
+class CreateUserRequest extends Model {
+    #[Required] #[MaxLength(50)]
+    public string $username;
+    #[Required] #[Email]
+    public string $email;
+}
+
+// Controller — $request is hydrated and validated automatically
+public function store(CreateUserRequest $request): JsonResponse { /* ... */ }
+public function update(string $id, UpdateUserRequest $request): JsonResponse { /* ... */ }
+```
+
+See [docs/validation.md](docs/validation.md) for full details.
 
 ### JWT Authentication
 

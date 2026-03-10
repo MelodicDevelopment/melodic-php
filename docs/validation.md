@@ -111,7 +111,68 @@ if (!$result->isValid) {
 
 The exception carries the `ValidationResult` on its `$result` property, which the exception handler includes in the JSON response.
 
-## In a Controller
+## Automatic Model Binding
+
+When a controller action has a parameter typed as a `Melodic\Data\Model` subclass, the framework automatically hydrates it from the request body and validates it. If validation fails, a `400` JSON response with the errors array is returned before the controller is called.
+
+```php
+use Melodic\Data\Model;
+use Melodic\Validation\Rules\{Required, Email, MaxLength};
+
+class CreateUserRequest extends Model
+{
+    #[Required]
+    #[MaxLength(50)]
+    public string $username;
+
+    #[Required]
+    #[Email]
+    public string $email;
+}
+```
+
+```php
+class UserApiController extends ApiController
+{
+    public function __construct(
+        private readonly UserService $userService,
+    ) {}
+
+    public function store(CreateUserRequest $request): JsonResponse
+    {
+        // $request is already hydrated and validated
+        $id = $this->userService->create($request->username, $request->email);
+        return $this->created(['id' => $id], "/api/users/{$id}");
+    }
+
+    public function update(string $id, UpdateUserRequest $request): JsonResponse
+    {
+        // Route params (like $id) and model params work together
+        $this->userService->update($id, $request);
+        return $this->noContent();
+    }
+}
+```
+
+If the request body fails validation, the framework returns a `400` response like:
+
+```json
+{
+    "username": ["This field is required"],
+    "email": ["Must be a valid email address"]
+}
+```
+
+**How it works:**
+- The `RoutingMiddleware` uses `ReflectionMethod` to inspect action parameters
+- Route params (strings from the URL like `$id`) are matched by name first
+- Parameters typed as a concrete `Model` subclass are hydrated via `Model::fromArray($request->body())`
+- The hydrated model is validated using the `Validator` (resolved from the DI container)
+- If validation fails, the controller action is never called
+
+## Manual Validation in a Controller
+
+You can still validate manually when you need more control:
 
 ```php
 class UserApiController extends ApiController

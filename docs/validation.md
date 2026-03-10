@@ -131,6 +131,18 @@ class CreateUserRequest extends Model
 }
 ```
 
+Register the routes — `POST /api/users` and `PUT /api/users/{id}`:
+
+```php
+$router->post('/api/users', UserApiController::class, 'store');
+$router->put('/api/users/{id}', UserApiController::class, 'update');
+
+// Or use apiResource() which registers all RESTful routes at once:
+$router->apiResource('/api/users', UserApiController::class);
+```
+
+Then in the controller, type-hint the request model on the action parameter:
+
 ```php
 class UserApiController extends ApiController
 {
@@ -140,14 +152,14 @@ class UserApiController extends ApiController
 
     public function store(CreateUserRequest $request): JsonResponse
     {
-        // $request is already hydrated and validated
+        // $request is already hydrated from the POST body and validated
         $id = $this->userService->create($request->username, $request->email);
         return $this->created(['id' => $id], "/api/users/{$id}");
     }
 
     public function update(string $id, UpdateUserRequest $request): JsonResponse
     {
-        // Route params (like $id) and model params work together
+        // Route params (like $id from the URL) and model params work together
         $this->userService->update($id, $request);
         return $this->noContent();
     }

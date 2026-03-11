@@ -309,6 +309,31 @@ class DbContextTest extends TestCase
     }
 
     #[Test]
+    public function queryHydratesStdClassFromRow(): void
+    {
+        $this->insertUser('Alice', 'alice@example.com', 9.5, 1);
+
+        $users = $this->db->query(\stdClass::class, 'SELECT * FROM users');
+
+        $this->assertCount(1, $users);
+        $this->assertInstanceOf(\stdClass::class, $users[0]);
+        $this->assertSame('Alice', $users[0]->name);
+        $this->assertSame('alice@example.com', $users[0]->email);
+    }
+
+    #[Test]
+    public function queryFirstHydratesStdClassFromRow(): void
+    {
+        $this->insertUser('Alice', 'alice@example.com', 9.5, 1);
+
+        $result = $this->db->queryFirst(\stdClass::class, 'SELECT * FROM users LIMIT 1');
+
+        $this->assertInstanceOf(\stdClass::class, $result);
+        $this->assertSame('Alice', $result->name);
+        $this->assertSame('alice@example.com', $result->email);
+    }
+
+    #[Test]
     public function constructorAcceptsDsnString(): void
     {
         $db = new DbContext('sqlite::memory:');

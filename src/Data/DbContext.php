@@ -98,6 +98,10 @@ class DbContext implements DbContextInterface
 
     private function hydrate(ReflectionClass $reflector, array $row): object
     {
+        if ($reflector->getName() === 'stdClass') {
+            return (object) $row;
+        }
+
         $instance = $reflector->newInstanceWithoutConstructor();
 
         foreach ($row as $column => $value) {

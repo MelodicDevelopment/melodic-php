@@ -46,6 +46,50 @@ class Model implements \JsonSerializable
         return $result;
     }
 
+    /**
+     * Return all initialized properties with PascalCase keys.
+     * Booleans are converted to ints for PDO compatibility.
+     */
+    public function toPascalArray(): array
+    {
+        $reflector = new ReflectionClass($this);
+        $properties = $reflector->getProperties(ReflectionProperty::IS_PUBLIC);
+        $result = [];
+
+        foreach ($properties as $property) {
+            if ($property->isInitialized($this)) {
+                $value = $property->getValue($this);
+                $result[$property->getName()] = is_bool($value) ? (int) $value : $value;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Return only non-null properties with PascalCase keys.
+     * Used for partial updates where null means "not provided".
+     * Booleans are converted to ints for PDO compatibility.
+     */
+    public function toUpdateArray(): array
+    {
+        $reflector = new ReflectionClass($this);
+        $properties = $reflector->getProperties(ReflectionProperty::IS_PUBLIC);
+        $result = [];
+
+        foreach ($properties as $property) {
+            if ($property->isInitialized($this)) {
+                $value = $property->getValue($this);
+
+                if ($value !== null) {
+                    $result[$property->getName()] = is_bool($value) ? (int) $value : $value;
+                }
+            }
+        }
+
+        return $result;
+    }
+
     public function jsonSerialize(): mixed
     {
         return $this->toArray();

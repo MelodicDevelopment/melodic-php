@@ -1,6 +1,6 @@
 # Console
 
-Melodic includes a lightweight CLI console for running commands from the terminal. It provides a `Console` runner, a `Command` base class with output helpers, and two built-in commands.
+Melodic includes a lightweight CLI console for running commands from the terminal. It provides a `Console` runner, a `Command` base class with output helpers, and several built-in commands.
 
 ## Quick Start
 
@@ -143,3 +143,23 @@ Displays all registered routes in a table with method, path, controller, and act
 ### `cache:clear`
 
 Calls `CacheInterface::clear()` to flush all cached data. Requires a `CacheInterface` instance. See [Cache](cache.md).
+
+### `claude:install`
+
+Installs Claude Code agents, skills, and a starter `CLAUDE.md` into your project. This enables framework-aware AI assistance when using [Claude Code](https://claude.com/claude-code).
+
+```bash
+vendor/bin/melodic claude:install           # install (skips existing files)
+vendor/bin/melodic claude:install --force   # overwrite existing files
+```
+
+Installs:
+
+| Type | Name | Description |
+|---|---|---|
+| Agent | `melodic-expert` | Framework expert for architecture, patterns, and debugging |
+| Skill | `/melodic:scaffold-app` | Scaffold a new Melodic application |
+| Skill | `/melodic:scaffold-resource` | Scaffold a full CQRS resource |
+| Skill | `/melodic:add-middleware` | Scaffold a middleware class |
+
+See [Claude Code Integration](claude-code.md) for full details.

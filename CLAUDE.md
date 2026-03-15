@@ -56,7 +56,7 @@ melodic-php/
 │   │   ├── DbContext.php                # PDO wrapper with model hydration
 │   │   ├── QueryInterface.php           # CQRS query: getSql(), execute()
 │   │   ├── CommandInterface.php         # CQRS command: getSql(), execute() → int
-│   │   └── Model.php                    # Base DTO: fromArray(), toArray()
+│   │   └── Model.php                    # Base DTO: fromArray(), toArray(), toPascalArray(), toUpdateArray()
 │   ├── Security/
 │   │   ├── JwtValidator.php             # Firebase JWT validation
 │   │   ├── User.php                     # id, username, email, entitlements
@@ -70,6 +70,15 @@ melodic-php/
 │   └── View/
 │       ├── ViewEngine.php               # .phtml rendering with layouts/sections
 │       └── ViewBag.php                  # Dynamic key-value store
+├── .claude/
+│   ├── agents/
+│   │   └── melodic-expert.md            # Claude Code agent: framework expert
+│   ├── skills/
+│   │   ├── melodic:scaffold-app/        # Scaffold a new Melodic application
+│   │   ├── melodic:scaffold-resource/   # Scaffold a CQRS resource
+│   │   └── melodic:add-middleware/      # Scaffold a middleware class
+│   └── commands/
+│       └── melodic:cp.md               # Commit and push shortcut
 └── web/php.melodic.dev/                 # Documentation website (dogfoods the framework)
 ```
 
@@ -253,10 +262,12 @@ vendor/bin/melodic make:project my-api --type=api      # API-only project
 vendor/bin/melodic make:project my-site --type=mvc     # MVC-only project
 vendor/bin/melodic make:entity Church                  # Generate 8 CQRS files for an entity
 vendor/bin/melodic make:config staging                 # Create config/config.staging.json
+vendor/bin/melodic claude:install                      # Install Claude Code agents and skills
 ```
 
 `make:entity` generates: DTO model, 2 queries (GetAll, GetById), 3 commands (Create, Update, Delete), service, and controller.
 `make:config` creates an environment-specific config file. See [docs/configuration.md](docs/configuration.md).
+`claude:install` copies Claude Code agents, skills, and a starter CLAUDE.md into your project. See [docs/claude-code.md](docs/claude-code.md).
 
 ## Conventions
 

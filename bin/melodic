@@ -24,6 +24,7 @@ if (!$loaded) {
 }
 
 use Melodic\Console\Console;
+use Melodic\Console\ClaudeInstallCommand;
 use Melodic\Console\Make\MakeConfigCommand;
 use Melodic\Console\Make\MakeEntityCommand;
 use Melodic\Console\Make\MakeProjectCommand;
@@ -34,5 +35,6 @@ $console->setName('Melodic');
 $console->register(new MakeProjectCommand());
 $console->register(new MakeEntityCommand());
 $console->register(new MakeConfigCommand());
+$console->register(new ClaudeInstallCommand());
 
 exit($console->run($argv));

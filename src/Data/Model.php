@@ -28,6 +28,13 @@ class Model implements \JsonSerializable
             }
         }
 
+        // Initialize any remaining nullable properties that weren't in the input
+        foreach ($reflector->getProperties(ReflectionProperty::IS_PUBLIC) as $prop) {
+            if (!$prop->isInitialized($instance) && $prop->getType()?->allowsNull()) {
+                $prop->setValue($instance, null);
+            }
+        }
+
         return $instance;
     }
 

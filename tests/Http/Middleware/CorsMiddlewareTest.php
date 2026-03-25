@@ -12,13 +12,18 @@ use PHPUnit\Framework\TestCase;
 
 final class CorsMiddlewareTest extends TestCase
 {
-    private function makeRequest(string $method = 'GET', string $uri = '/'): Request
+    private function makeRequest(string $method = 'GET', string $uri = '/', ?string $origin = null): Request
     {
+        $headers = [];
+        if ($origin !== null) {
+            $headers['Origin'] = $origin;
+        }
+
         return new Request(
             server: ['REQUEST_METHOD' => $method, 'REQUEST_URI' => $uri],
             query: [],
             body: [],
-            headers: [],
+            headers: $headers,
         );
     }
 
@@ -37,10 +42,10 @@ final class CorsMiddlewareTest extends TestCase
         };
     }
 
-    public function testDefaultConfigSetsExpectedValues(): void
+    public function testWildcardOriginReturnsStarRegardlessOfRequestOrigin(): void
     {
         $middleware = new CorsMiddleware();
-        $request = $this->makeRequest();
+        $request = $this->makeRequest(origin: 'https://example.com');
         $handler = $this->makeHandler();
 
         $response = $middleware->process($request, $handler);
@@ -50,32 +55,118 @@ final class CorsMiddlewareTest extends TestCase
         $this->assertSame('GET, POST, PUT, DELETE, PATCH, OPTIONS', $headers['Access-Control-Allow-Methods']);
         $this->assertSame('Content-Type, Authorization', $headers['Access-Control-Allow-Headers']);
         $this->assertSame('86400', $headers['Access-Control-Max-Age']);
+        $this->assertArrayNotHasKey('Vary', $headers);
     }
 
-    public function testCustomConfigOverridesDefaults(): void
+    public function testWildcardOriginReturnsStarWithNoOriginHeader(): void
+    {
+        $middleware = new CorsMiddleware();
+        $request = $this->makeRequest();
+        $handler = $this->makeHandler();
+
+        $response = $middleware->process($request, $handler);
+
+        $this->assertSame('*', $response->getHeaders()['Access-Control-Allow-Origin']);
+    }
+
+    public function testExactOriginMatchReturnsMatchingOrigin(): void
     {
         $middleware = new CorsMiddleware([
             'allowedOrigins' => ['https://example.com'],
-            'allowedMethods' => ['GET', 'POST'],
-            'allowedHeaders' => ['X-Custom-Header'],
-            'maxAge' => 3600,
         ]);
-        $request = $this->makeRequest();
+        $request = $this->makeRequest(origin: 'https://example.com');
         $handler = $this->makeHandler();
 
         $response = $middleware->process($request, $handler);
 
         $headers = $response->getHeaders();
         $this->assertSame('https://example.com', $headers['Access-Control-Allow-Origin']);
-        $this->assertSame('GET, POST', $headers['Access-Control-Allow-Methods']);
-        $this->assertSame('X-Custom-Header', $headers['Access-Control-Allow-Headers']);
-        $this->assertSame('3600', $headers['Access-Control-Max-Age']);
+        $this->assertSame('Origin', $headers['Vary']);
+    }
+
+    public function testNonMatchingOriginOmitsAllowOriginHeader(): void
+    {
+        $middleware = new CorsMiddleware([
+            'allowedOrigins' => ['https://example.com'],
+        ]);
+        $request = $this->makeRequest(origin: 'https://evil.com');
+        $handler = $this->makeHandler();
+
+        $response = $middleware->process($request, $handler);
+
+        $this->assertArrayNotHasKey('Access-Control-Allow-Origin', $response->getHeaders());
+    }
+
+    public function testNoOriginHeaderWithSpecificOriginsOmitsAllowOrigin(): void
+    {
+        $middleware = new CorsMiddleware([
+            'allowedOrigins' => ['https://example.com'],
+        ]);
+        $request = $this->makeRequest();
+        $handler = $this->makeHandler();
+
+        $response = $middleware->process($request, $handler);
+
+        $this->assertArrayNotHasKey('Access-Control-Allow-Origin', $response->getHeaders());
+    }
+
+    public function testMultipleOriginsReturnsOnlyMatchingOne(): void
+    {
+        $middleware = new CorsMiddleware([
+            'allowedOrigins' => ['https://a.com', 'https://b.com'],
+        ]);
+        $request = $this->makeRequest(origin: 'https://b.com');
+        $handler = $this->makeHandler();
+
+        $response = $middleware->process($request, $handler);
+
+        $this->assertSame('https://b.com', $response->getHeaders()['Access-Control-Allow-Origin']);
+        $this->assertSame('Origin', $response->getHeaders()['Vary']);
+    }
+
+    public function testMultipleOriginsNoMatchOmitsHeader(): void
+    {
+        $middleware = new CorsMiddleware([
+            'allowedOrigins' => ['https://a.com', 'https://b.com'],
+        ]);
+        $request = $this->makeRequest(origin: 'https://c.com');
+        $handler = $this->makeHandler();
+
+        $response = $middleware->process($request, $handler);
+
+        $this->assertArrayNotHasKey('Access-Control-Allow-Origin', $response->getHeaders());
+    }
+
+    public function testWildcardSubdomainPatternMatches(): void
+    {
+        $middleware = new CorsMiddleware([
+            'allowedOrigins' => ['https://*.thekingdomnow.com'],
+        ]);
+        $request = $this->makeRequest(origin: 'https://app.thekingdomnow.com');
+        $handler = $this->makeHandler();
+
+        $response = $middleware->process($request, $handler);
+
+        $this->assertSame('https://app.thekingdomnow.com', $response->getHeaders()['Access-Control-Allow-Origin']);
+    }
+
+    public function testWildcardSubdomainPatternRejectsNonMatch(): void
+    {
+        $middleware = new CorsMiddleware([
+            'allowedOrigins' => ['https://*.thekingdomnow.com'],
+        ]);
+        $request = $this->makeRequest(origin: 'https://evil.com');
+        $handler = $this->makeHandler();
+
+        $response = $middleware->process($request, $handler);
+
+        $this->assertArrayNotHasKey('Access-Control-Allow-Origin', $response->getHeaders());
     }
 
     public function testOptionsRequestReturnsPreflight204(): void
     {
         $middleware = new CorsMiddleware();
-        $request = $this->makeRequest('OPTIONS');
+        $request = $this->makeRequest('OPTIONS', '/', 'https://example.com');
         $handler = $this->makeHandler();
 
         $response = $middleware->process($request, $handler);
@@ -111,7 +202,7 @@ final class CorsMiddlewareTest extends TestCase
     public function testRegularRequestPassesThroughToHandler(): void
     {
         $middleware = new CorsMiddleware();
-        $request = $this->makeRequest('GET');
+        $request = $this->makeRequest('GET', '/', 'https://example.com');
         $handler = $this->makeHandler(200, 'handler body');
 
         $response = $middleware->process($request, $handler);
@@ -121,16 +212,64 @@ final class CorsMiddlewareTest extends TestCase
         $this->assertArrayHasKey('Access-Control-Allow-Origin', $response->getHeaders());
     }
 
-    public function testMultipleOriginsJoinedWithComma(): void
+    public function testAllowCredentialsAddedWhenConfigured(): void
     {
         $middleware = new CorsMiddleware([
-            'allowedOrigins' => ['https://a.com', 'https://b.com'],
+            'allowedOrigins' => ['https://example.com'],
+            'allowCredentials' => true,
         ]);
-        $request = $this->makeRequest();
+        $request = $this->makeRequest(origin: 'https://example.com');
         $handler = $this->makeHandler();
 
         $response = $middleware->process($request, $handler);
 
-        $this->assertSame('https://a.com, https://b.com', $response->getHeaders()['Access-Control-Allow-Origin']);
+        $this->assertSame('true', $response->getHeaders()['Access-Control-Allow-Credentials']);
+    }
+
+    public function testAllowCredentialsNotAddedWithWildcardOrigin(): void
+    {
+        $middleware = new CorsMiddleware([
+            'allowCredentials' => true,
+        ]);
+        $request = $this->makeRequest(origin: 'https://example.com');
+        $handler = $this->makeHandler();
+
+        $response = $middleware->process($request, $handler);
+
+        $this->assertSame('*', $response->getHeaders()['Access-Control-Allow-Origin']);
+        $this->assertArrayNotHasKey('Access-Control-Allow-Credentials', $response->getHeaders());
+    }
+
+    public function testAllowCredentialsNotAddedWhenNotConfigured(): void
+    {
+        $middleware = new CorsMiddleware([
+            'allowedOrigins' => ['https://example.com'],
+        ]);
+        $request = $this->makeRequest(origin: 'https://example.com');
+        $handler = $this->makeHandler();
+
+        $response = $middleware->process($request, $handler);
+
+        $this->assertArrayNotHasKey('Access-Control-Allow-Credentials', $response->getHeaders());
+    }
+
+    public function testCustomConfigOverridesDefaults(): void
+    {
+        $middleware = new CorsMiddleware([
+            'allowedOrigins' => ['https://example.com'],
+            'allowedMethods' => ['GET', 'POST'],
+            'allowedHeaders' => ['X-Custom-Header'],
+            'maxAge' => 3600,
+        ]);
+        $request = $this->makeRequest(origin: 'https://example.com');
+        $handler = $this->makeHandler();
+
+        $response = $middleware->process($request, $handler);
+
+        $headers = $response->getHeaders();
+        $this->assertSame('https://example.com', $headers['Access-Control-Allow-Origin']);
+        $this->assertSame('GET, POST', $headers['Access-Control-Allow-Methods']);
+        $this->assertSame('X-Custom-Header', $headers['Access-Control-Allow-Headers']);
+        $this->assertSame('3600', $headers['Access-Control-Max-Age']);
     }
 }

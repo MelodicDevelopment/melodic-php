@@ -39,6 +39,9 @@ class RoutingMiddleware implements MiddlewareInterface
             $request = $request->withAttribute($name, $value);
         }
 
+        $request = $request->withAttribute('route', $route);
+        $request = $request->withAttribute('route.attributes', $route->attributes);
+
         // Build a handler that invokes the controller action
         $controllerHandler = new class($this->container, $route, $params) implements RequestHandlerInterface {
             public function __construct(

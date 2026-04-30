@@ -414,11 +414,11 @@ $app->routes(function (Router $router) {
 
 | Method | Registers |
 |---|---|
-| `get(path, controller, action, middleware)` | GET route |
-| `post(path, controller, action, middleware)` | POST route |
-| `put(path, controller, action, middleware)` | PUT route |
-| `delete(path, controller, action, middleware)` | DELETE route |
-| `patch(path, controller, action, middleware)` | PATCH route |
+| `get(path, controller, action, middleware, attributes)` | GET route |
+| `post(path, controller, action, middleware, attributes)` | POST route |
+| `put(path, controller, action, middleware, attributes)` | PUT route |
+| `delete(path, controller, action, middleware, attributes)` | DELETE route |
+| `patch(path, controller, action, middleware, attributes)` | PATCH route |
 
 ### RESTful API Resource
 
@@ -492,6 +492,52 @@ $router->get('/admin', AdminController::class, 'dashboard', middleware: [
 ```
 
 Route-level middleware runs in a mini-pipeline after the global middleware pipeline resolves the route.
+
+### Route Attributes
+
+Routes can carry arbitrary metadata as a keyed array. Middleware reads these attributes from the request to drive cross-cutting policies (permissions, feature flags, rate-limit tiers) without re-implementing the same guard inside every controller action:
+
+```php
+$router->get('/people', PersonController::class, 'index',
+    middleware: [RequirePermissionMiddleware::class],
+    attributes: ['permission' => 'people.view']);
+```
+
+Attributes can also be set at the group or `apiResource` level and propagate to descendant routes:
+
+```php
+$router->group('/api', function (Router $r) {
+    $r->apiResource('/users', UserController::class,
+        attributes: ['permission' => 'users.manage']);
+}, attributes: ['scope' => 'api']);
+// Each generated route ends up with ['scope' => 'api', 'permission' => 'users.manage']
+```
+
+Group and route attributes deep-merge (recursive `array_replace`). On a key conflict, the more-specific level wins (route over group, inner group over outer).
+
+`RoutingMiddleware` exposes the matched route's metadata on the request before the per-route middleware pipeline runs:
+
+| Request attribute | Value |
+|---|---|
+| `route.attributes` | The merged attributes array for the matched route |
+| `route` | The matched `Route` instance (handy for diagnostics) |
+
+```php
+class RequirePermissionMiddleware implements MiddlewareInterface
+{
+    public function process(Request $request, RequestHandlerInterface $handler): Response
+    {
+        $attributes = $request->getAttribute('route.attributes', []);
+        $required = $attributes['permission'] ?? null;
+
+        if ($required !== null && !$this->userHas($required)) {
+            return new JsonResponse(['error' => 'forbidden'], 403);
+        }
+
+        return $handler->handle($request);
+    }
+}
+```
 
 ---
 
@@ -1699,11 +1745,43 @@ Converts exceptions to HTTP responses with content negotiation (JSON vs HTML).
 ```php
 class ErrorHandlerMiddleware implements MiddlewareInterface
 {
-    public function __construct(LoggerInterface $logger, bool $debug = false) {}
+    public function __construct(ExceptionHandler $exceptionHandler) {}
 }
 ```
 
-Wraps the entire middleware pipeline. Catches any `\Throwable` and delegates to `ExceptionHandler`.
+Wraps the entire middleware pipeline. Catches any `\Throwable` and delegates to `ExceptionHandler`. The handler is resolved from the DI container so any mappers registered during boot are visible.
+
+### Custom Exception Mapping
+
+Apps can register closures that map a specific exception class (or its subclasses) to a custom Response — useful for domain exceptions like `PlanLimitExceededException → 402` with a structured payload, without try/catching at every controller call site.
+
+```php
+class AppServiceProvider extends ServiceProvider
+{
+    public function boot(Container $c): void
+    {
+        $handler = $c->get(ExceptionHandler::class);
+
+        $handler->registerMapper(PlanLimitExceededException::class, function (\Throwable $e) {
+            return new JsonResponse([
+                'code' => 'plan_limit_exceeded',
+                'message' => $e->getMessage(),
+                'limit' => $e->limit,
+            ], 402);
+        });
+    }
+}
+```
+
+**Mapper signature:** `fn(\Throwable $e, Request $request): Response`
+
+**Dispatch rules:**
+- The default `logException()` runs first, so observability is preserved regardless of mapper
+- Mappers are walked in registration order; **first `is_a` match wins** (subclasses match parent registrations)
+- Returning a Response short-circuits the default JSON/HTML formatting entirely
+- If no mapper matches, the request falls through to the default `HttpException` / `SecurityException` / `\JsonException` / 500 path with byte-identical behavior
+
+The handler is bound as a singleton in the container before `ServiceProvider::boot()` runs, so registrations from `boot()` are visible to both `ErrorHandlerMiddleware` and `Application`'s last-resort catch.
 
 ### HTTP Exceptions
 

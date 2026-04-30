@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Http\Middleware;
 
+use Melodic\Error\ExceptionHandler;
 use Melodic\Http\Exception\NotFoundException;
 use Melodic\Http\Middleware\ErrorHandlerMiddleware;
 use Melodic\Http\Middleware\RequestHandlerInterface;
@@ -14,6 +15,14 @@ use PHPUnit\Framework\TestCase;
 
 final class ErrorHandlerMiddlewareTest extends TestCase
 {
+    private function makeMiddleware(bool $debug = false): ErrorHandlerMiddleware
+    {
+        $handler = new ExceptionHandler(new NullLogger());
+        $handler->setDebug($debug);
+
+        return new ErrorHandlerMiddleware($handler);
+    }
+
     private function makeRequest(string $method = 'GET', string $uri = '/'): Request
     {
         return new Request(
@@ -48,7 +57,7 @@ final class ErrorHandlerMiddlewareTest extends TestCase
 
     public function testPassesThroughWhenNoException(): void
     {
-        $middleware = new ErrorHandlerMiddleware(new NullLogger());
+        $middleware = $this->makeMiddleware();
         $request = $this->makeRequest();
         $handler = $this->makeSuccessHandler();
 
@@ -60,7 +69,7 @@ final class ErrorHandlerMiddlewareTest extends TestCase
 
     public function testCatchesHttpExceptionAndReturnsErrorResponse(): void
     {
-        $middleware = new ErrorHandlerMiddleware(new NullLogger());
+        $middleware = $this->makeMiddleware();
         $request = $this->makeRequest();
         $handler = $this->makeThrowingHandler(new NotFoundException('Resource not found'));
 
@@ -71,7 +80,7 @@ final class ErrorHandlerMiddlewareTest extends TestCase
 
     public function testCatchesGenericExceptionAndReturns500(): void
     {
-        $middleware = new ErrorHandlerMiddleware(new NullLogger());
+        $middleware = $this->makeMiddleware();
         $request = $this->makeRequest();
         $handler = $this->makeThrowingHandler(new \RuntimeException('Something went wrong'));
 
@@ -82,7 +91,7 @@ final class ErrorHandlerMiddlewareTest extends TestCase
 
     public function testDebugModeIncludesExceptionDetailsInJsonResponse(): void
     {
-        $middleware = new ErrorHandlerMiddleware(new NullLogger(), debug: true);
+        $middleware = $this->makeMiddleware(debug: true);
         $request = new Request(
             server: ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/api/test'],
             query: [],
@@ -104,7 +113,7 @@ final class ErrorHandlerMiddlewareTest extends TestCase
 
     public function testNonDebugModeHidesInternalErrorMessage(): void
     {
-        $middleware = new ErrorHandlerMiddleware(new NullLogger(), debug: false);
+        $middleware = $this->makeMiddleware(debug: false);
         $request = new Request(
             server: ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/api/test'],
             query: [],
@@ -123,7 +132,7 @@ final class ErrorHandlerMiddlewareTest extends TestCase
 
     public function testReturnsHtmlResponseForNonApiRequest(): void
     {
-        $middleware = new ErrorHandlerMiddleware(new NullLogger());
+        $middleware = $this->makeMiddleware();
         $request = new Request(
             server: ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/page'],
             query: [],
@@ -137,5 +146,22 @@ final class ErrorHandlerMiddlewareTest extends TestCase
         $this->assertSame(404, $response->getStatusCode());
         $this->assertSame('text/html; charset=UTF-8', $response->getHeaders()['Content-Type']);
         $this->assertStringContainsString('404', $response->getBody());
+    }
+
+    public function testRegisteredExceptionMapperIsInvoked(): void
+    {
+        $exceptionHandler = new ExceptionHandler(new NullLogger());
+        $exceptionHandler->registerMapper(\RuntimeException::class, function (\Throwable $e) {
+            return new Response(418, 'mapped: ' . $e->getMessage());
+        });
+
+        $middleware = new ErrorHandlerMiddleware($exceptionHandler);
+        $request = $this->makeRequest();
+        $handler = $this->makeThrowingHandler(new \RuntimeException('boom'));
+
+        $response = $middleware->process($request, $handler);
+
+        $this->assertSame(418, $response->getStatusCode());
+        $this->assertSame('mapped: boom', $response->getBody());
     }
 }

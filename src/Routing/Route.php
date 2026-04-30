@@ -14,6 +14,7 @@ class Route
         public readonly string $controller,
         public readonly string $action,
         public readonly array $middleware = [],
+        public readonly array $attributes = [],
     ) {}
 
     public function matches(HttpMethod $method, string $path): ?array

@@ -15,6 +15,9 @@ class ExceptionHandler
 {
     private bool $debug = false;
 
+    /** @var array<class-string<\Throwable>, callable(\Throwable, Request): Response> */
+    private array $mappers = [];
+
     public function __construct(
         private readonly LoggerInterface $logger,
     ) {}
@@ -24,12 +27,31 @@ class ExceptionHandler
         $this->debug = $debug;
     }
 
+    /**
+     * Register a closure that maps a specific exception class (or its subclasses)
+     * to a custom Response. First registered match wins; subclass dispatch via is_a.
+     *
+     * @param class-string<\Throwable> $exceptionClass
+     * @param callable(\Throwable, Request): Response $mapper
+     */
+    public function registerMapper(string $exceptionClass, callable $mapper): void
+    {
+        $this->mappers[$exceptionClass] = $mapper;
+    }
+
     public function handle(\Throwable $exception, Request $request): Response
     {
         $statusCode = $this->resolveStatusCode($exception);
-        $message = $this->resolveMessage($exception, $statusCode);
 
         $this->logException($exception, $statusCode, $request);
+
+        foreach ($this->mappers as $class => $mapper) {
+            if (is_a($exception, $class)) {
+                return $mapper($exception, $request);
+            }
+        }
+
+        $message = $this->resolveMessage($exception, $statusCode);
 
         if ($this->isJsonRequest($request)) {
             return $this->buildJsonResponse($exception, $statusCode, $message);

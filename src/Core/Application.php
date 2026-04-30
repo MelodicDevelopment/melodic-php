@@ -153,20 +153,25 @@ class Application
         $debug = (bool) $this->configuration->get('app.debug', false);
 
         try {
+            // Bind the exception handler as a singleton so providers' boot() can
+            // resolve it from the container and register exception mappers.
+            $this->container->singleton(ExceptionHandler::class, function (Container $c) use ($debug) {
+                $logger = $c->has(LoggerInterface::class)
+                    ? $c->get(LoggerInterface::class)
+                    : new NullLogger();
+                $handler = new ExceptionHandler($logger);
+                $handler->setDebug($debug);
+                return $handler;
+            });
+
             // Boot all service providers
             foreach ($this->providers as $provider) {
                 $provider->boot($this->container);
             }
 
-            // Resolve logger (falls back to NullLogger if not registered)
-            $logger = $this->container->has(LoggerInterface::class)
-                ? $this->container->get(LoggerInterface::class)
-                : new NullLogger();
-
-            // Register the exception handler in the container
-            $exceptionHandler = new ExceptionHandler($logger);
-            $exceptionHandler->setDebug($debug);
-            $this->container->instance(ExceptionHandler::class, $exceptionHandler);
+            // Resolve the (possibly already-instantiated) shared handler
+            /** @var ExceptionHandler $exceptionHandler */
+            $exceptionHandler = $this->container->get(ExceptionHandler::class);
 
             $request = $request ?? Request::capture();
 
@@ -195,7 +200,7 @@ class Application
             $pipeline = new Pipeline($finalHandler);
 
             // Error handler is piped first so it wraps the entire middleware stack
-            $pipeline->pipe(new ErrorHandlerMiddleware($logger, $debug));
+            $pipeline->pipe(new ErrorHandlerMiddleware($exceptionHandler));
 
             foreach ($this->middlewares as $middleware) {
                 $pipeline->pipe($middleware);

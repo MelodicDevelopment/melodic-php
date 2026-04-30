@@ -75,6 +75,20 @@ class StubHeaderMiddleware implements MiddlewareInterface
     }
 }
 
+class StubRouteAttributesMiddleware implements MiddlewareInterface
+{
+    public ?array $capturedAttributes = null;
+    public mixed $capturedRoute = null;
+
+    public function process(Request $request, RequestHandlerInterface $handler): Response
+    {
+        $this->capturedAttributes = $request->getAttribute('route.attributes');
+        $this->capturedRoute = $request->getAttribute('route');
+
+        return $handler->handle($request);
+    }
+}
+
 // -------------------------------------------------------
 // Tests
 // -------------------------------------------------------
@@ -250,6 +264,32 @@ final class RoutingMiddlewareTest extends TestCase
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('true', $response->getHeaders()['X-Middleware-Applied'] ?? null);
+    }
+
+    // -------------------------------------------------------
+    // Route attributes exposed to middleware
+    // -------------------------------------------------------
+
+    public function testRouteAttributesAreExposedToMiddleware(): void
+    {
+        $attributesMiddleware = new StubRouteAttributesMiddleware();
+        $this->container->bind(StubRouteAttributesMiddleware::class, fn() => $attributesMiddleware);
+
+        $this->router->get(
+            '/items',
+            StubController::class,
+            'index',
+            [StubRouteAttributesMiddleware::class],
+            ['permission' => 'items.read'],
+        );
+
+        $middleware = $this->createMiddleware();
+        $request = $this->createRequest('GET', '/items');
+
+        $middleware->process($request, $this->fallbackHandler);
+
+        $this->assertSame(['permission' => 'items.read'], $attributesMiddleware->capturedAttributes);
+        $this->assertNotNull($attributesMiddleware->capturedRoute);
     }
 
     // -------------------------------------------------------

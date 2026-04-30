@@ -382,6 +382,111 @@ class RouterTest extends TestCase
     }
 
     // -------------------------------------------------------
+    // Route attributes
+    // -------------------------------------------------------
+
+    public function testRouteAttributesDefaultToEmptyArray(): void
+    {
+        $this->router->get('/users', 'UserController', 'index');
+
+        $routes = $this->router->getRoutes();
+
+        $this->assertSame([], $routes[0]->attributes);
+    }
+
+    public function testRouteAttributesAreStoredOnRoute(): void
+    {
+        $this->router->get('/users', 'UserController', 'index', [], ['permission' => 'users.view']);
+
+        $routes = $this->router->getRoutes();
+
+        $this->assertSame(['permission' => 'users.view'], $routes[0]->attributes);
+    }
+
+    public function testGroupAttributesAreAppliedToRoutes(): void
+    {
+        $this->router->group('/api', function (Router $r) {
+            $r->get('/users', 'UserController', 'index');
+        }, attributes: ['scope' => 'api']);
+
+        $routes = $this->router->getRoutes();
+
+        $this->assertSame(['scope' => 'api'], $routes[0]->attributes);
+    }
+
+    public function testRouteAttributesOverrideGroupAttributesOnConflict(): void
+    {
+        $this->router->group('/api', function (Router $r) {
+            $r->get('/users', 'UserController', 'index', [], ['permission' => 'users.view']);
+        }, attributes: ['permission' => 'api.read', 'scope' => 'api']);
+
+        $routes = $this->router->getRoutes();
+
+        $this->assertSame(
+            ['permission' => 'users.view', 'scope' => 'api'],
+            $routes[0]->attributes,
+        );
+    }
+
+    public function testNestedGroupAttributesMergeWithChildKeysWinning(): void
+    {
+        $this->router->group('/api', function (Router $r) {
+            $r->group('/admin', function (Router $r) {
+                $r->get('/dashboard', 'DashboardController', 'index');
+            }, attributes: ['scope' => 'admin']);
+        }, attributes: ['scope' => 'api', 'tier' => 'public']);
+
+        $routes = $this->router->getRoutes();
+
+        $this->assertSame(
+            ['scope' => 'admin', 'tier' => 'public'],
+            $routes[0]->attributes,
+        );
+    }
+
+    public function testGroupAttributesDoNotLeakToOuterRoutes(): void
+    {
+        $this->router->group('/api', function (Router $r) {
+            $r->get('/inner', 'InnerController', 'index');
+        }, attributes: ['scope' => 'api']);
+        $this->router->get('/outer', 'OuterController', 'index');
+
+        $routes = $this->router->getRoutes();
+
+        $this->assertSame(['scope' => 'api'], $routes[0]->attributes);
+        $this->assertSame([], $routes[1]->attributes);
+    }
+
+    public function testApiResourceAttributesAreAppliedToAllRoutes(): void
+    {
+        $this->router->apiResource('/users', 'UserController', [], ['permission' => 'users.manage']);
+
+        $routes = $this->router->getRoutes();
+
+        $this->assertCount(5, $routes);
+
+        foreach ($routes as $route) {
+            $this->assertSame(['permission' => 'users.manage'], $route->attributes);
+        }
+    }
+
+    public function testGroupAndApiResourceAttributesMerge(): void
+    {
+        $this->router->group('/api', function (Router $r) {
+            $r->apiResource('/users', 'UserController', [], ['permission' => 'users.manage']);
+        }, attributes: ['scope' => 'api']);
+
+        $routes = $this->router->getRoutes();
+
+        foreach ($routes as $route) {
+            $this->assertSame(
+                ['scope' => 'api', 'permission' => 'users.manage'],
+                $route->attributes,
+            );
+        }
+    }
+
+    // -------------------------------------------------------
     // Fluent interface
     // -------------------------------------------------------
 

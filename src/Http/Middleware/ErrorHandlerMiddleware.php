@@ -7,19 +7,12 @@ namespace Melodic\Http\Middleware;
 use Melodic\Error\ExceptionHandler;
 use Melodic\Http\Request;
 use Melodic\Http\Response;
-use Melodic\Log\LoggerInterface;
 
 class ErrorHandlerMiddleware implements MiddlewareInterface
 {
-    private readonly ExceptionHandler $exceptionHandler;
-
     public function __construct(
-        LoggerInterface $logger,
-        bool $debug = false,
-    ) {
-        $this->exceptionHandler = new ExceptionHandler($logger);
-        $this->exceptionHandler->setDebug($debug);
-    }
+        private readonly ExceptionHandler $exceptionHandler,
+    ) {}
 
     public function process(Request $request, RequestHandlerInterface $handler): Response
     {

@@ -201,6 +201,87 @@ class DbContextTest extends TestCase
     }
 
     #[Test]
+    public function nestedTransactionCommitsInnerWorkOnSuccess(): void
+    {
+        $this->db->transaction(function (DbContext $db): void {
+            $db->command(
+                'INSERT INTO users (name, email, score, active) VALUES (:name, :email, :score, :active)',
+                ['name' => 'Alice', 'email' => 'alice@example.com', 'score' => 9.5, 'active' => 1],
+            );
+
+            $db->transaction(function (DbContext $inner): void {
+                $inner->command(
+                    'INSERT INTO users (name, email, score, active) VALUES (:name, :email, :score, :active)',
+                    ['name' => 'Bob', 'email' => 'bob@example.com', 'score' => 7.2, 'active' => 1],
+                );
+            });
+        });
+
+        $users = $this->db->query(TestUser::class, 'SELECT * FROM users ORDER BY id');
+
+        $this->assertCount(2, $users);
+        $this->assertSame('Alice', $users[0]->name);
+        $this->assertSame('Bob', $users[1]->name);
+    }
+
+    #[Test]
+    public function nestedTransactionRollsBackOnlyInnerWorkWhenInnerThrowsAndOuterCatches(): void
+    {
+        $this->db->transaction(function (DbContext $db): void {
+            $db->command(
+                'INSERT INTO users (name, email, score, active) VALUES (:name, :email, :score, :active)',
+                ['name' => 'Alice', 'email' => 'alice@example.com', 'score' => 9.5, 'active' => 1],
+            );
+
+            try {
+                $db->transaction(function (DbContext $inner): void {
+                    $inner->command(
+                        'INSERT INTO users (name, email, score, active) VALUES (:name, :email, :score, :active)',
+                        ['name' => 'Bob', 'email' => 'bob@example.com', 'score' => 7.2, 'active' => 1],
+                    );
+
+                    throw new RuntimeException('Inner failure');
+                });
+            } catch (RuntimeException) {
+                // swallow — outer continues
+            }
+        });
+
+        $users = $this->db->query(TestUser::class, 'SELECT * FROM users ORDER BY id');
+
+        $this->assertCount(1, $users);
+        $this->assertSame('Alice', $users[0]->name);
+    }
+
+    #[Test]
+    public function nestedTransactionRollsBackOuterWhenInnerThrowsAndOuterRethrows(): void
+    {
+        try {
+            $this->db->transaction(function (DbContext $db): void {
+                $db->command(
+                    'INSERT INTO users (name, email, score, active) VALUES (:name, :email, :score, :active)',
+                    ['name' => 'Alice', 'email' => 'alice@example.com', 'score' => 9.5, 'active' => 1],
+                );
+
+                $db->transaction(function (DbContext $inner): void {
+                    $inner->command(
+                        'INSERT INTO users (name, email, score, active) VALUES (:name, :email, :score, :active)',
+                        ['name' => 'Bob', 'email' => 'bob@example.com', 'score' => 7.2, 'active' => 1],
+                    );
+
+                    throw new RuntimeException('Inner failure');
+                });
+            });
+        } catch (RuntimeException) {
+            // expected
+        }
+
+        $users = $this->db->query(TestUser::class, 'SELECT * FROM users');
+
+        $this->assertSame([], $users);
+    }
+
+    #[Test]
     public function transactionReturnsCallbackResult(): void
     {
         $result = $this->db->transaction(function (DbContext $db): int {

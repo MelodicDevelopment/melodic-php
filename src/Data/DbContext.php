@@ -70,6 +70,21 @@ class DbContext implements DbContextInterface
 
     public function transaction(callable $callback): mixed
     {
+        if ($this->pdo->inTransaction()) {
+            $savepoint = 'sp_' . bin2hex(random_bytes(4));
+            $this->pdo->exec("SAVEPOINT {$savepoint}");
+
+            try {
+                $result = $callback($this);
+                $this->pdo->exec("RELEASE SAVEPOINT {$savepoint}");
+
+                return $result;
+            } catch (Throwable $e) {
+                $this->pdo->exec("ROLLBACK TO SAVEPOINT {$savepoint}");
+                throw $e;
+            }
+        }
+
         $this->pdo->beginTransaction();
 
         try {

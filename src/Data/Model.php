@@ -15,10 +15,12 @@ class Model implements \JsonSerializable
         $instance = $reflector->newInstanceWithoutConstructor();
 
         foreach ($data as $key => $value) {
-            // Try the key as-is (PascalCase from DB), then ucfirst (camelCase from frontend)
+            // Try the key as-is (PascalCase from DB), then ucfirst (camelCase from frontend),
+            // then strtoupper for acronym properties like $EIN/$URL/$SSN sent as lowercase JSON.
             $propertyName = match (true) {
                 $reflector->hasProperty($key) => $key,
                 $reflector->hasProperty(ucfirst($key)) => ucfirst($key),
+                $reflector->hasProperty(strtoupper($key)) => strtoupper($key),
                 default => null,
             };
 
@@ -46,7 +48,11 @@ class Model implements \JsonSerializable
 
         foreach ($properties as $property) {
             if ($property->isInitialized($this)) {
-                $result[lcfirst($property->getName())] = $property->getValue($this);
+                $name = $property->getName();
+                // All-caps acronym properties ($EIN, $URL) serialize fully lowercase to match
+                // JSON convention; mixed/PascalCase keeps lcfirst so $UserName -> "userName".
+                $key = ctype_upper($name) ? strtolower($name) : lcfirst($name);
+                $result[$key] = $property->getValue($this);
             }
         }
 

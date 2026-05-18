@@ -101,6 +101,71 @@ final class ModelTest extends TestCase
 
         $this->assertSame('{"id":1,"name":"Alice","email":"alice@example.com"}', $json);
     }
+
+    public function testFromArrayBindsAllCapsPropertyFromLowercaseKey(): void
+    {
+        $model = AcronymModel::fromArray([
+            'ein' => '12-3456789',
+            'url' => 'https://example.com',
+        ]);
+
+        $this->assertSame('12-3456789', $model->EIN);
+        $this->assertSame('https://example.com', $model->URL);
+    }
+
+    public function testFromArrayBindsAllCapsPropertyFromExactKey(): void
+    {
+        $model = AcronymModel::fromArray([
+            'EIN' => '12-3456789',
+            'URL' => 'https://example.com',
+        ]);
+
+        $this->assertSame('12-3456789', $model->EIN);
+        $this->assertSame('https://example.com', $model->URL);
+    }
+
+    public function testToArraySerializesAllCapsPropertyAsLowercase(): void
+    {
+        $model = AcronymModel::fromArray([
+            'ein' => '12-3456789',
+            'url' => 'https://example.com',
+        ]);
+
+        $result = $model->toArray();
+
+        $this->assertSame([
+            'ein' => '12-3456789',
+            'url' => 'https://example.com',
+        ], $result);
+    }
+
+    public function testToArrayKeepsMixedCasePropertyUntouched(): void
+    {
+        $model = MixedCaseModel::fromArray([
+            'userName' => 'alice',
+            'apiKey' => 'secret',
+        ]);
+
+        $result = $model->toArray();
+
+        $this->assertSame([
+            'userName' => 'alice',
+            'apiKey' => 'secret',
+        ], $result);
+    }
+
+    public function testAcronymRoundTripsLowercase(): void
+    {
+        $model = AcronymModel::fromArray([
+            'ein' => '12-3456789',
+            'url' => 'https://example.com',
+        ]);
+
+        $this->assertSame(
+            '{"ein":"12-3456789","url":"https:\/\/example.com"}',
+            json_encode($model),
+        );
+    }
 }
 
 class TestModel extends Model
@@ -108,4 +173,16 @@ class TestModel extends Model
     public int $Id;
     public string $Name;
     public string $Email;
+}
+
+class AcronymModel extends Model
+{
+    public string $EIN;
+    public string $URL;
+}
+
+class MixedCaseModel extends Model
+{
+    public string $userName;
+    public string $apiKey;
 }

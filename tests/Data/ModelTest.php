@@ -166,6 +166,65 @@ final class ModelTest extends TestCase
             json_encode($model),
         );
     }
+
+    public function testToUpdateArrayPreservesExplicitNull(): void
+    {
+        // RFC 7396: explicit null in input means "clear this field" and must be
+        // emitted, not silently dropped.
+        $model = PartialUpdateModel::fromArray(['Description' => null]);
+
+        $this->assertSame(['Description' => null], $model->toUpdateArray());
+    }
+
+    public function testToUpdateArrayEmitsProvidedValue(): void
+    {
+        $model = PartialUpdateModel::fromArray(['Description' => 'x']);
+
+        $this->assertSame(['Description' => 'x'], $model->toUpdateArray());
+    }
+
+    public function testToUpdateArrayEmptyWhenNothingProvided(): void
+    {
+        $model = PartialUpdateModel::fromArray([]);
+
+        $this->assertSame([], $model->toUpdateArray());
+    }
+
+    public function testWasProvidedReflectsInput(): void
+    {
+        $model = PartialUpdateModel::fromArray(['Description' => 'x']);
+
+        $this->assertTrue($model->wasProvided('Description'));
+        $this->assertFalse($model->wasProvided('Name'));
+    }
+
+    public function testWasProvidedAndUpdateUseResolvedPropertyName(): void
+    {
+        // Lowercase input key resolves to the all-caps property; consumers should
+        // ask for the property name (EIN), not the wire key (ein).
+        $model = AcronymModel::fromArray(['ein' => '12-3456789']);
+
+        $this->assertTrue($model->wasProvided('EIN'));
+        $this->assertFalse($model->wasProvided('ein'));
+        $this->assertSame(['EIN' => '12-3456789'], $model->toUpdateArray());
+    }
+
+    public function testProgrammaticAssignmentDoesNotPolluteUpdateArray(): void
+    {
+        // fields_set reflects the wire, not subsequent mutation.
+        $model = new PartialUpdateModel();
+        $model->Description = 'x';
+
+        $this->assertSame([], $model->toUpdateArray());
+        $this->assertFalse($model->wasProvided('Description'));
+    }
+
+    public function testToUpdateArrayConvertsBoolToInt(): void
+    {
+        $model = PartialUpdateModel::fromArray(['Active' => true]);
+
+        $this->assertSame(['Active' => 1], $model->toUpdateArray());
+    }
 }
 
 class TestModel extends Model
@@ -185,4 +244,11 @@ class MixedCaseModel extends Model
 {
     public string $userName;
     public string $apiKey;
+}
+
+class PartialUpdateModel extends Model
+{
+    public ?string $Name = null;
+    public ?string $Description = null;
+    public ?bool $Active = null;
 }

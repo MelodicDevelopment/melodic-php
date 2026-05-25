@@ -24,6 +24,13 @@ final class RequestTest extends TestCase
         $this->assertSame(HttpMethod::GET, $request->method());
     }
 
+    public function testMethodParsedAsHeadFromServerArray(): void
+    {
+        $request = new Request(server: ['REQUEST_METHOD' => 'HEAD', 'REQUEST_URI' => '/']);
+
+        $this->assertSame(HttpMethod::HEAD, $request->method());
+    }
+
     public function testPathParsedFromServerArray(): void
     {
         $request = new Request(server: ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/users/42']);

@@ -12,6 +12,7 @@ enum HttpMethod: string
     case DELETE = 'DELETE';
     case PATCH = 'PATCH';
     case OPTIONS = 'OPTIONS';
+    case HEAD = 'HEAD';
 
     public static function parse(string $method): self
     {

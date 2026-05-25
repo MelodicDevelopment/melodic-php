@@ -513,4 +513,40 @@ class RouterTest extends TestCase
         $this->assertNotNull($result);
         $this->assertSame('First', $result['route']->controller);
     }
+
+    // -------------------------------------------------------
+    // HEAD requests transparently match GET routes (RFC 9110 §9.3.2)
+    // -------------------------------------------------------
+
+    public function testHeadRequestMatchesGetRoute(): void
+    {
+        $this->router->get('/users', 'UserController', 'index');
+
+        $result = $this->router->match(HttpMethod::HEAD, '/users');
+
+        $this->assertNotNull($result);
+        $this->assertSame('UserController', $result['route']->controller);
+        $this->assertSame('index', $result['route']->action);
+    }
+
+    public function testHeadAndGetReturnIdenticalParams(): void
+    {
+        $this->router->get('/users/{id}', 'UserController', 'show');
+
+        $get = $this->router->match(HttpMethod::GET, '/users/42');
+        $head = $this->router->match(HttpMethod::HEAD, '/users/42');
+
+        $this->assertNotNull($get);
+        $this->assertNotNull($head);
+        $this->assertSame($get['params'], $head['params']);
+    }
+
+    public function testHeadRequestDoesNotMatchPostRoute(): void
+    {
+        $this->router->post('/users', 'UserController', 'store');
+
+        $result = $this->router->match(HttpMethod::HEAD, '/users');
+
+        $this->assertNull($result);
+    }
 }

@@ -19,7 +19,11 @@ class Route
 
     public function matches(HttpMethod $method, string $path): ?array
     {
-        if ($this->method !== $method) {
+        // RFC 9110 §9.3.2: any resource supporting GET must also support HEAD.
+        // Normalize HEAD to GET for the comparison so HEAD requests match GET routes.
+        $comparable = $method === HttpMethod::HEAD ? HttpMethod::GET : $method;
+
+        if ($this->method !== $comparable) {
             return null;
         }
 

@@ -34,9 +34,13 @@ class SecurityServiceProvider extends ServiceProvider
         $container->singleton(AuthProviderRegistry::class, function (Container $c) {
             /** @var AuthConfig $authConfig */
             $authConfig = $c->get(AuthConfig::class);
+            /** @var Configuration $config */
+            $config = $c->get(Configuration::class);
             $registry = new AuthProviderRegistry();
 
-            $cacheDir = sys_get_temp_dir() . '/melodic_oidc_cache';
+            // Defaults to a private temp dir (created 0700 by OidcProvider); point
+            // it at app-owned storage via config on shared hosting.
+            $cacheDir = (string) $config->get('auth.oidcCacheDir', sys_get_temp_dir() . '/melodic_oidc_cache');
             $localAuthConfig = $authConfig->getLocalAuth();
 
             foreach ($authConfig->getProviders() as $name => $providerConfig) {

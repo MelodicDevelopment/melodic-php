@@ -21,6 +21,22 @@ class CsrfToken
         return $token;
     }
 
+    /**
+     * Return the current session token, generating one only if none exists.
+     * Prefer this when rendering forms so repeated renders (multiple tabs,
+     * prefetch) don't churn the single stored token and invalidate earlier forms.
+     */
+    public function getToken(): string
+    {
+        $existing = $this->session->get(self::SESSION_KEY);
+
+        if (is_string($existing) && $existing !== '') {
+            return $existing;
+        }
+
+        return $this->generate();
+    }
+
     public function validate(string $token): bool
     {
         $stored = $this->session->get(self::SESSION_KEY);

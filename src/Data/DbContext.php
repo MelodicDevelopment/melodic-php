@@ -144,9 +144,27 @@ class DbContext implements DbContextInterface
         return match ($type->getName()) {
             'int' => (int) $value,
             'float' => (float) $value,
-            'bool' => (bool) $value,
+            'bool' => $this->castBool($value),
             'string' => (string) $value,
             default => $value,
         };
+    }
+
+    /**
+     * Cast a database value to bool. A plain (bool) cast mishandles the string
+     * forms drivers return — notably Postgres "f"/"false" and "0", all of which
+     * are truthy strings — so those are normalized to false explicitly.
+     */
+    private function castBool(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_string($value)) {
+            return !in_array(strtolower(trim($value)), ['', '0', 'f', 'false', 'no', 'off'], true);
+        }
+
+        return (bool) $value;
     }
 }

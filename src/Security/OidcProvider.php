@@ -56,8 +56,10 @@ class OidcProvider
 
     private function fetchCached(string $filename, string $url): array
     {
-        if (!is_dir($this->cacheDir)) {
-            mkdir($this->cacheDir, 0755, true);
+        // 0700: discovery/JWKS docs drive signature validation, so the cache must
+        // not be writable by other local users (key-substitution would bypass it).
+        if (!is_dir($this->cacheDir) && !mkdir($this->cacheDir, 0700, true) && !is_dir($this->cacheDir)) {
+            throw new SecurityException("Unable to create OIDC cache directory: {$this->cacheDir}");
         }
 
         $cachePath = rtrim($this->cacheDir, '/') . '/' . $filename;
@@ -78,31 +80,9 @@ class OidcProvider
             }
         }
 
-        $context = stream_context_create([
-            'http' => [
-                'method' => 'GET',
-                'header' => "Accept: application/json\r\n",
-                'timeout' => 10,
-            ],
-            'ssl' => [
-                'verify_peer' => true,
-                'verify_peer_name' => true,
-            ],
-        ]);
+        $decoded = OAuthClient::requestJson('GET', $url);
 
-        $contents = file_get_contents($url, false, $context);
-
-        if ($contents === false) {
-            throw new SecurityException("Failed to fetch OIDC document from: {$url}");
-        }
-
-        $decoded = json_decode($contents, true);
-
-        if (!is_array($decoded)) {
-            throw new SecurityException("Invalid JSON response from: {$url}");
-        }
-
-        file_put_contents($cachePath, $contents);
+        file_put_contents($cachePath, json_encode($decoded));
 
         return $decoded;
     }

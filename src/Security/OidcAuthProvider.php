@@ -165,8 +165,6 @@ class OidcAuthProvider implements AuthProviderInterface
 
     private function exchangeCode(string $code, string $codeVerifier): array
     {
-        $tokenEndpoint = $this->oidcProvider->getTokenEndpoint();
-
         $postFields = [
             'grant_type' => 'authorization_code',
             'code' => $code,
@@ -179,37 +177,11 @@ class OidcAuthProvider implements AuthProviderInterface
             $postFields['client_secret'] = $this->config->clientSecret;
         }
 
-        $postData = http_build_query($postFields);
-
-        $context = stream_context_create([
-            'http' => [
-                'method' => 'POST',
-                'header' => "Content-Type: application/x-www-form-urlencoded\r\nAccept: application/json\r\n",
-                'content' => $postData,
-                'timeout' => 10,
-            ],
-            'ssl' => [
-                'verify_peer' => true,
-                'verify_peer_name' => true,
-            ],
-        ]);
-
-        $response = file_get_contents($tokenEndpoint, false, $context);
-
-        if ($response === false) {
-            throw new SecurityException('Failed to exchange authorization code for tokens.');
-        }
-
-        $decoded = json_decode($response, true);
-
-        if (!is_array($decoded)) {
-            throw new SecurityException('Invalid token response from authorization server.');
-        }
-
-        if (isset($decoded['error'])) {
-            throw new SecurityException('Token exchange failed: ' . ($decoded['error_description'] ?? $decoded['error']));
-        }
-
-        return $decoded;
+        return OAuthClient::requestJson(
+            'POST',
+            $this->oidcProvider->getTokenEndpoint(),
+            ['Content-Type' => 'application/x-www-form-urlencoded'],
+            http_build_query($postFields),
+        );
     }
 }

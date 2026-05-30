@@ -35,8 +35,11 @@ class ApiAuthenticationMiddleware implements MiddlewareInterface
         try {
             $claims = $this->validator->validate($token);
             $userContext = UserContext::fromClaims($claims);
-        } catch (SecurityException $e) {
-            return new JsonResponse(['error' => 'Authentication failed: ' . $e->getMessage()], 401);
+        } catch (SecurityException) {
+            // Return a generic message — the underlying reason (bad audience,
+            // expired token, malformed JWT, ...) is internal detail a client
+            // must not see. Let the validator/logging layer record specifics.
+            return new JsonResponse(['error' => 'Authentication failed.'], 401);
         }
 
         $request = $request->withAttribute('userContext', $userContext);

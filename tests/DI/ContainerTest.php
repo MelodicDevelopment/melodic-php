@@ -346,4 +346,24 @@ class ContainerTest extends TestCase
         $second = $this->container->get(SimpleClass::class);
         $this->assertSame('second', $second->value);
     }
+
+    public function testReregisteringSingletonReplacesCachedInstance(): void
+    {
+        $this->container->singleton(SimpleClass::class, function () {
+            $obj = new SimpleClass();
+            $obj->value = 'first';
+            return $obj;
+        });
+
+        // Resolve so the instance is cached, then re-register as a singleton.
+        $this->assertSame('first', $this->container->get(SimpleClass::class)->value);
+
+        $this->container->singleton(SimpleClass::class, function () {
+            $obj = new SimpleClass();
+            $obj->value = 'second';
+            return $obj;
+        });
+
+        $this->assertSame('second', $this->container->get(SimpleClass::class)->value);
+    }
 }

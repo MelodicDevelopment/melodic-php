@@ -61,7 +61,7 @@ class AuthCallbackMiddleware implements MiddlewareInterface
     private function handleLoginPage(Request $request): Response
     {
         $error = $request->query('error');
-        $csrfToken = $this->csrf->generate();
+        $csrfToken = $this->csrf->getToken();
         $html = $this->loginRenderer->render($error, $csrfToken);
 
         return new Response(

@@ -427,6 +427,32 @@ class DbContextTest extends TestCase
         $this->assertSame(1, (int) $count);
     }
 
+    #[Test]
+    public function hydratesDatabaseBooleanStringForms(): void
+    {
+        $this->insertUser('Alice', 'alice@example.com', 1.0, 1);
+
+        // Postgres returns boolean columns as "f"/"t"; "f", "false", "0" and ""
+        // must all hydrate to false (a plain (bool) cast would make them true).
+        $false = $this->db->queryFirst(
+            TestUser::class,
+            "SELECT id, name, email, score, 'f' AS active, bio FROM users",
+        );
+        $this->assertFalse($false->active);
+
+        $zero = $this->db->queryFirst(
+            TestUser::class,
+            "SELECT id, name, email, score, '0' AS active, bio FROM users",
+        );
+        $this->assertFalse($zero->active);
+
+        $true = $this->db->queryFirst(
+            TestUser::class,
+            "SELECT id, name, email, score, 'true' AS active, bio FROM users",
+        );
+        $this->assertTrue($true->active);
+    }
+
     private function insertUser(
         string $name,
         string $email,

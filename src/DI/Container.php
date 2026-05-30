@@ -56,6 +56,10 @@ class Container implements ContainerInterface
             'concrete' => $concrete,
             'singleton' => true,
         ];
+
+        // Drop any previously cached instance so re-registering a singleton
+        // actually takes effect (matches bind()'s behavior).
+        unset($this->instances[$abstract]);
     }
 
     public function instance(string $abstract, object $instance): void

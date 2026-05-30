@@ -178,4 +178,19 @@ final class FileLoggerTest extends TestCase
         $expectedFile = $this->logDirectory . '/melodic-' . date('Y-m-d') . '.log';
         $this->assertFileExists($expectedFile);
     }
+
+    public function testInterpolatedContextCannotInjectNewLogLines(): void
+    {
+        $logger = new FileLogger($this->logDirectory);
+
+        $logger->info('User {name} signed in', [
+            'name' => "evil\n[2099-01-01 00:00:00] EMERGENCY: forged entry",
+        ]);
+
+        $content = $this->getLogContent();
+
+        // The CR/LF is collapsed to a space, so no forged line is created.
+        $this->assertStringNotContainsString("\n[2099-01-01 00:00:00] EMERGENCY", $content);
+        $this->assertStringContainsString('evil [2099-01-01 00:00:00] EMERGENCY: forged entry', $content);
+    }
 }

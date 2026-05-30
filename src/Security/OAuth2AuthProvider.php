@@ -114,36 +114,12 @@ class OAuth2AuthProvider implements AuthProviderInterface
             'code_verifier' => $codeVerifier,
         ];
 
-        $postData = http_build_query($postFields);
-
-        $context = stream_context_create([
-            'http' => [
-                'method' => 'POST',
-                'header' => "Content-Type: application/x-www-form-urlencoded\r\nAccept: application/json\r\n",
-                'content' => $postData,
-                'timeout' => 10,
-            ],
-            'ssl' => [
-                'verify_peer' => true,
-                'verify_peer_name' => true,
-            ],
-        ]);
-
-        $response = file_get_contents($this->config->tokenUrl, false, $context);
-
-        if ($response === false) {
-            throw new SecurityException('Failed to exchange authorization code for tokens.');
-        }
-
-        $decoded = json_decode($response, true);
-
-        if (!is_array($decoded)) {
-            throw new SecurityException('Invalid token response from authorization server.');
-        }
-
-        if (isset($decoded['error'])) {
-            throw new SecurityException('Token exchange failed: ' . ($decoded['error_description'] ?? $decoded['error']));
-        }
+        $decoded = OAuthClient::requestJson(
+            'POST',
+            $this->config->tokenUrl,
+            ['Content-Type' => 'application/x-www-form-urlencoded'],
+            http_build_query($postFields),
+        );
 
         return $decoded['access_token']
             ?? throw new SecurityException('No access token received from authorization server.');
@@ -151,31 +127,11 @@ class OAuth2AuthProvider implements AuthProviderInterface
 
     private function fetchUserInfo(string $accessToken): array
     {
-        $context = stream_context_create([
-            'http' => [
-                'method' => 'GET',
-                'header' => "Authorization: Bearer {$accessToken}\r\nAccept: application/json\r\n",
-                'timeout' => 10,
-            ],
-            'ssl' => [
-                'verify_peer' => true,
-                'verify_peer_name' => true,
-            ],
-        ]);
-
-        $response = file_get_contents($this->config->userInfoUrl, false, $context);
-
-        if ($response === false) {
-            throw new SecurityException('Failed to fetch user info from provider.');
-        }
-
-        $decoded = json_decode($response, true);
-
-        if (!is_array($decoded)) {
-            throw new SecurityException('Invalid user info response from provider.');
-        }
-
-        return $decoded;
+        return OAuthClient::requestJson(
+            'GET',
+            $this->config->userInfoUrl,
+            ['Authorization' => "Bearer {$accessToken}"],
+        );
     }
 
     private function issueLocalJwt(array $claims): string

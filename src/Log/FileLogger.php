@@ -94,11 +94,21 @@ class FileLogger implements LoggerInterface
             }
 
             if (is_scalar($value) || (is_object($value) && method_exists($value, '__toString'))) {
-                $replacements['{' . $key . '}'] = (string) $value;
+                $replacements['{' . $key . '}'] = $this->sanitize((string) $value);
             }
         }
 
         return strtr($message, $replacements);
+    }
+
+    /**
+     * Collapse CR/LF in interpolated values so attacker-controlled context can't
+     * forge additional log lines (log injection). The exception block formats its
+     * own multi-line output separately and is not passed through here.
+     */
+    private function sanitize(string $value): string
+    {
+        return str_replace(["\r\n", "\r", "\n"], ' ', $value);
     }
 
     private function write(string $entry): void

@@ -163,6 +163,22 @@ final class CorsMiddlewareTest extends TestCase
         $this->assertArrayNotHasKey('Access-Control-Allow-Origin', $response->getHeaders());
     }
 
+    public function testWildcardMatchesMultiLevelSubdomain(): void
+    {
+        $middleware = new CorsMiddleware([
+            'allowedOrigins' => ['https://*.thekingdomnow.com'],
+        ]);
+        $request = $this->makeRequest(origin: 'https://a.b.thekingdomnow.com');
+        $handler = $this->makeHandler();
+
+        $response = $middleware->process($request, $handler);
+
+        $this->assertSame(
+            'https://a.b.thekingdomnow.com',
+            $response->getHeaders()['Access-Control-Allow-Origin'],
+        );
+    }
+
     public function testOptionsRequestReturnsPreflight204(): void
     {
         $middleware = new CorsMiddleware();

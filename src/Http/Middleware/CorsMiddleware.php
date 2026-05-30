@@ -87,7 +87,10 @@ class CorsMiddleware implements MiddlewareInterface
 
     private function matchesWildcard(string $pattern, string $origin): bool
     {
-        $regex = '/^' . str_replace('\*', '[a-zA-Z0-9\-]+', preg_quote($pattern, '/')) . '$/';
+        // `*` matches one or more DNS label characters including dots, so
+        // `https://*.example.com` matches sub-subdomains (a.b.example.com), not
+        // just a single label. The literal suffix stays anchored by `^...$`.
+        $regex = '/^' . str_replace('\*', '[a-zA-Z0-9.\-]+', preg_quote($pattern, '/')) . '$/';
 
         return (bool) preg_match($regex, $origin);
     }

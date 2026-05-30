@@ -6,6 +6,13 @@ namespace Melodic\Core;
 
 use RuntimeException;
 
+/**
+ * JSON-backed configuration with dot-notation access.
+ *
+ * Note: keys are split on "." for nesting, so a dot is always a path separator.
+ * A JSON key that itself contains a literal dot (e.g. "app.name" as a single
+ * key) is not addressable via get()/has(); nest such values instead.
+ */
 class Configuration
 {
     private array $data;

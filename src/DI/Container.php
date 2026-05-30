@@ -35,6 +35,12 @@ class Container implements ContainerInterface
         return $this->resolve($id);
     }
 
+    /**
+     * Whether the container can attempt to resolve the id. This answers
+     * "resolvable", not "registered": it returns true for any existing class
+     * (auto-wiring may still fail later if that class has unresolvable
+     * constructor parameters), in addition to explicit bindings/instances.
+     */
     public function has(string $id): bool
     {
         return isset($this->bindings[$id]) || isset($this->instances[$id]) || class_exists($id);

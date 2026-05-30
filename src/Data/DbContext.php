@@ -61,6 +61,12 @@ class DbContext implements DbContextInterface
         return $statement->rowCount();
     }
 
+    /**
+     * Fetch the first column of the first row. Returns false when there are no
+     * rows — which `fetchColumn()` also returns for a legitimate false/null/0/''
+     * value, so this cannot distinguish "no rows" from a falsy result. For a
+     * COUNT(*) the value is reliable; for nullable columns, prefer queryFirst().
+     */
     public function scalar(string $sql, array $params = []): mixed
     {
         $statement = $this->prepareAndExecute($sql, $params);

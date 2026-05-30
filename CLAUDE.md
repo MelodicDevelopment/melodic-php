@@ -15,9 +15,16 @@ HTTP Request → Middleware Pipeline → Router → Controller → Service → Q
 - `Melodic\Controller` — Base controllers (API + MVC)
 - `Melodic\DI` — Dependency injection container with auto-wiring
 - `Melodic\Data` — DbContext (PDO wrapper), CQRS interfaces
-- `Melodic\Security` — JWT validation, authentication/authorization middleware
+- `Melodic\Security` — JWT validation, OAuth2/OIDC providers, refresh tokens, CSRF, auth/authorization middleware
 - `Melodic\Service` — Base service class
-- `Melodic\View` — Template engine with layouts and sections
+- `Melodic\View` — Template engine with layouts and sections (use `$this->e()` to escape output)
+- `Melodic\Validation` — Attribute-based DTO validation (`#[Required]`, `#[Email]`, …); rules are nullable-by-default
+- `Melodic\Cache` — PSR-16-style cache (`FileCache`, `ArrayCache`)
+- `Melodic\Session` — Session abstraction (`NativeSession`, `ArraySession`)
+- `Melodic\Log` — File/Null loggers with level filtering
+- `Melodic\Event` — Priority-based event dispatcher
+- `Melodic\Error` — `ExceptionHandler` (JSON/HTML, debug/prod, status mapping)
+- `Melodic\Console` — CLI runner + `make:*` scaffolding commands
 
 ## Project Structure
 
@@ -277,6 +284,8 @@ vendor/bin/melodic claude:install                      # Install Claude Code age
 - **Controller → Service → Query/Command** — no direct DB access in controllers
 - **CQRS data access** — Query/Command objects executed via DbContext
 - **No facades, no mediator** — direct, explicit instantiation
+- **Secure by default** — auth/session cookies default to Secure+HttpOnly+SameSite; logout is a CSRF-protected POST; JWTs require `iss`+`exp`; OAuth2/OIDC use PKCE. See `MIGRATION-3.0.md`.
+- **Static analysis** — `composer analyse` (PHPStan level 6) is **not yet clean**: ~143 `missingType.iterableValue` warnings remain (type-annotation gaps, not runtime bugs). Don't claim it's clean; don't add new ones.
 
 ## Versioning & Publishing
 

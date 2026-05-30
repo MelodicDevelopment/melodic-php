@@ -23,31 +23,53 @@ class ViewEngine
 
     public function render(string $template, array $data = [], ?string $layout = null): string
     {
+        // Snapshot render state so a nested render() (e.g. a partial rendered from
+        // within a template) can't clobber the parent's body/sections. Restored
+        // in finally so state is always returned to the caller's context.
+        $previousBody = $this->bodyContent;
+        $previousSections = $this->sections;
+        $previousCurrentSection = $this->currentSection;
+
         $this->bodyContent = '';
         $this->sections = [];
         $this->currentSection = null;
 
-        $templatePath = $this->viewsPath . '/' . $template . '.phtml';
+        try {
+            $templatePath = $this->viewsPath . '/' . $template . '.phtml';
 
-        if (!file_exists($templatePath)) {
-            throw new RuntimeException("View template not found: {$templatePath}");
-        }
-
-        $content = $this->renderTemplate($templatePath, $data);
-
-        if ($layout !== null) {
-            $this->bodyContent = $content;
-            $layoutPath = $this->viewsPath . '/' . $layout . '.phtml';
-
-            if (!file_exists($layoutPath)) {
-                throw new RuntimeException("Layout template not found: {$layoutPath}");
+            if (!file_exists($templatePath)) {
+                throw new RuntimeException("View template not found: {$templatePath}");
             }
 
-            $content = $this->renderTemplate($layoutPath, $data);
-            $this->bodyContent = '';
-        }
+            $content = $this->renderTemplate($templatePath, $data);
 
-        return $content;
+            if ($layout !== null) {
+                $this->bodyContent = $content;
+                $layoutPath = $this->viewsPath . '/' . $layout . '.phtml';
+
+                if (!file_exists($layoutPath)) {
+                    throw new RuntimeException("Layout template not found: {$layoutPath}");
+                }
+
+                $content = $this->renderTemplate($layoutPath, $data);
+            }
+
+            return $content;
+        } finally {
+            $this->bodyContent = $previousBody;
+            $this->sections = $previousSections;
+            $this->currentSection = $previousCurrentSection;
+        }
+    }
+
+    /**
+     * Escape a value for safe HTML output. Melodic does NOT auto-escape template
+     * output, so use this in .phtml as `<?= $this->e($value) ?>` for any
+     * user-supplied data to prevent XSS.
+     */
+    public function e(?string $value): string
+    {
+        return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
     }
 
     public function renderCached(string $template, array $data = [], ?string $layout = null, int $ttl = 3600): string

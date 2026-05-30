@@ -122,4 +122,26 @@ class ViewEngineTest extends TestCase
         $second = $engine->renderCached('hello', ['name' => 'World'], 'layout');
         $this->assertSame('<html><h1>Hello, World</h1></html>', $second);
     }
+
+    public function testEscapeHelperEscapesHtml(): void
+    {
+        $engine = new ViewEngine($this->viewsPath);
+
+        $this->assertSame('&lt;script&gt;alert(1)&lt;/script&gt;', $engine->e('<script>alert(1)</script>'));
+        $this->assertSame('&quot;quoted&quot;', $engine->e('"quoted"'));
+        $this->assertSame('', $engine->e(null));
+    }
+
+    public function testEscapeHelperIsUsableInTemplates(): void
+    {
+        file_put_contents(
+            $this->viewsPath . '/escaped.phtml',
+            '<p><?= $this->e($value) ?></p>'
+        );
+
+        $engine = new ViewEngine($this->viewsPath);
+        $html = $engine->render('escaped', ['value' => '<b>x</b>']);
+
+        $this->assertSame('<p>&lt;b&gt;x&lt;/b&gt;</p>', $html);
+    }
 }

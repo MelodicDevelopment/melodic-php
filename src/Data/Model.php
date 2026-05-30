@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Melodic\Data;
 
 use ReflectionClass;
+use ReflectionNamedType;
 use ReflectionProperty;
 
 class Model implements \JsonSerializable
@@ -29,7 +30,7 @@ class Model implements \JsonSerializable
 
             if ($propertyName !== null) {
                 $property = $reflector->getProperty($propertyName);
-                $property->setValue($instance, $value);
+                $property->setValue($instance, self::coerceValue($property, $value, $key));
                 $instance->_providedKeys[$propertyName] = true;
             }
         }
@@ -42,6 +43,111 @@ class Model implements \JsonSerializable
         }
 
         return $instance;
+    }
+
+    /**
+     * Coerce a raw input value to a property's declared scalar type so that
+     * well-formed-but-loosely-typed client input (e.g. "5" for an int) binds
+     * cleanly under strict_types. Values that cannot be coerced raise a
+     * ModelBindingException, which the routing layer turns into a 400.
+     */
+    private static function coerceValue(ReflectionProperty $property, mixed $value, string $field): mixed
+    {
+        $type = $property->getType();
+
+        // Union/intersection/no type hint: pass through untouched.
+        if (!$type instanceof ReflectionNamedType) {
+            return $value;
+        }
+
+        if ($value === null) {
+            if ($type->allowsNull()) {
+                return null;
+            }
+
+            throw new ModelBindingException($field, "Field '{$field}' may not be null.");
+        }
+
+        // Non-builtin types (nested models, enums, DateTime, ...) are left as-is.
+        if (!$type->isBuiltin()) {
+            return $value;
+        }
+
+        return match ($type->getName()) {
+            'int' => self::toInt($value, $field),
+            'float' => self::toFloat($value, $field),
+            'bool' => self::toBool($value, $field),
+            'string' => self::toString($value, $field),
+            default => $value, // array, object, mixed, iterable — no coercion
+        };
+    }
+
+    private static function toInt(mixed $value, string $field): int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && preg_match('/^-?\d+$/', $value) === 1) {
+            return (int) $value;
+        }
+
+        if (is_float($value) && floor($value) === $value) {
+            return (int) $value;
+        }
+
+        throw new ModelBindingException($field, "Field '{$field}' must be an integer.");
+    }
+
+    private static function toFloat(mixed $value, string $field): float
+    {
+        if (is_int($value) || is_float($value)) {
+            return (float) $value;
+        }
+
+        if (is_string($value) && is_numeric($value)) {
+            return (float) $value;
+        }
+
+        throw new ModelBindingException($field, "Field '{$field}' must be a number.");
+    }
+
+    private static function toBool(mixed $value, string $field): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if ($value === 1 || $value === 0) {
+            return (bool) $value;
+        }
+
+        if (is_string($value)) {
+            $normalized = strtolower($value);
+
+            if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+                return true;
+            }
+
+            if (in_array($normalized, ['0', 'false', 'no', 'off', ''], true)) {
+                return false;
+            }
+        }
+
+        throw new ModelBindingException($field, "Field '{$field}' must be a boolean.");
+    }
+
+    private static function toString(mixed $value, string $field): string
+    {
+        if (is_string($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return (string) $value;
+        }
+
+        throw new ModelBindingException($field, "Field '{$field}' must be a string.");
     }
 
     public function toArray(): array

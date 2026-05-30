@@ -27,6 +27,17 @@ class Route
             return null;
         }
 
+        return $this->matchesPath($path);
+    }
+
+    /**
+     * Match the path alone, ignoring the HTTP method. Used to detect routes that
+     * exist for a path under a different method (→ 405 instead of 404).
+     *
+     * @return array<string, string>|null Captured route params, or null on no match.
+     */
+    public function matchesPath(string $path): ?array
+    {
         $regex = preg_replace(
             '/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/',
             '(?P<$1>[^/]+)',

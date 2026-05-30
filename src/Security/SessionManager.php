@@ -8,9 +8,30 @@ use Melodic\Session\SessionInterface;
 
 class SessionManager implements SessionInterface
 {
+    public function __construct(
+        private readonly bool $cookieSecure = true,
+        private readonly string $cookieSameSite = 'Lax',
+        private readonly string $cookiePath = '/',
+        private readonly string $cookieDomain = '',
+    ) {
+    }
+
     public function start(): void
     {
         if (session_status() === PHP_SESSION_NONE) {
+            // Harden the session cookie before the session starts. Secure defaults
+            // on; disable via config for plain-HTTP local development.
+            if (!headers_sent()) {
+                session_set_cookie_params([
+                    'lifetime' => 0,
+                    'path' => $this->cookiePath,
+                    'domain' => $this->cookieDomain,
+                    'secure' => $this->cookieSecure,
+                    'httponly' => true,
+                    'samesite' => $this->cookieSameSite,
+                ]);
+            }
+
             session_start();
         }
     }

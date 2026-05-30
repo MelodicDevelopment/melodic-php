@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Melodic\Routing;
 
 use Melodic\Data\Model;
+use Melodic\Data\ModelBindingException;
 use Melodic\DI\Container;
+use Melodic\Http\Exception\MethodNotAllowedException;
 use Melodic\Http\JsonResponse;
 use Melodic\Http\Request;
 use Melodic\Http\Response;
@@ -28,6 +30,14 @@ class RoutingMiddleware implements MiddlewareInterface
         $result = $this->router->match($request->method(), $request->path());
 
         if ($result === null) {
+            // Path exists under other methods → 405 (with Allow header); otherwise
+            // fall through to the next handler, which 404s.
+            $allowed = $this->router->allowedMethodsForPath($request->path());
+
+            if ($allowed !== []) {
+                throw MethodNotAllowedException::forMethods($allowed);
+            }
+
             return $handler->handle($request);
         }
 
@@ -84,40 +94,66 @@ class RoutingMiddleware implements MiddlewareInterface
                         continue;
                     }
 
-                    // Check if the parameter type is a concrete Model subclass
                     $type = $param->getType();
 
+                    // No type hint or a builtin scalar with no matching route param.
                     if (!$type instanceof ReflectionNamedType || $type->isBuiltin())
                     {
                         if ($param->isDefaultValueAvailable())
                         {
                             $args[] = $param->getDefaultValue();
+                            continue;
                         }
-                        continue;
+
+                        if ($type instanceof ReflectionNamedType && $type->allowsNull())
+                        {
+                            $args[] = null;
+                            continue;
+                        }
+
+                        // Nothing can satisfy this parameter. Fail loudly with a
+                        // clear message instead of an opaque ArgumentCountError.
+                        throw new \RuntimeException(sprintf(
+                            'Cannot resolve argument $%s for %s::%s(). Expected a matching route '
+                            . 'parameter, a Model to bind from the request body, or a default value.',
+                            $name,
+                            $this->route->controller,
+                            $this->route->action,
+                        ));
                     }
 
                     $className = $type->getName();
 
-                    if (!is_subclass_of($className, Model::class))
+                    // Model subclass → hydrate from the request body and validate.
+                    if (is_subclass_of($className, Model::class))
                     {
+                        try
+                        {
+                            /** @var Model $model */
+                            $model = $className::fromArray($request->body());
+                        }
+                        catch (ModelBindingException $e)
+                        {
+                            // Malformed/uncoercible input is a client error, not a 500.
+                            return new JsonResponse([$e->field => [$e->getMessage()]], 400);
+                        }
+
+                        /** @var Validator $validator */
+                        $validator = $this->container->get(Validator::class);
+                        $result = $validator->validate($model);
+
+                        if (!$result->isValid)
+                        {
+                            return new JsonResponse($result->errors, 400);
+                        }
+
+                        $args[] = $model;
                         continue;
                     }
 
-                    // Hydrate the model from the request body
-                    /** @var Model $model */
-                    $model = $className::fromArray($request->body());
-
-                    // Validate the model
-                    /** @var Validator $validator */
-                    $validator = $this->container->get(Validator::class);
-                    $result = $validator->validate($model);
-
-                    if (!$result->isValid)
-                    {
-                        return new JsonResponse($result->errors, 400);
-                    }
-
-                    $args[] = $model;
+                    // Any other class → resolve it from the container so services
+                    // can be injected straight into controller actions.
+                    $args[] = $this->container->get($className);
                 }
 
                 return $args;

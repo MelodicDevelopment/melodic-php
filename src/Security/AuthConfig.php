@@ -18,6 +18,10 @@ class AuthConfig
         public readonly string $postLoginRedirect = '/',
         public readonly string $cookieName = 'melodic_auth',
         public readonly int $cookieLifetime = 3600,
+        public readonly bool $cookieSecure = true,
+        public readonly string $cookieSameSite = 'Lax',
+        public readonly string $cookiePath = '/',
+        public readonly string $cookieDomain = '',
         public readonly LoginPageConfig $loginPage = new LoginPageConfig(),
     ) {
     }
@@ -36,6 +40,10 @@ class AuthConfig
             postLoginRedirect: (string) ($config['postLoginRedirect'] ?? '/'),
             cookieName: (string) ($config['cookieName'] ?? 'melodic_auth'),
             cookieLifetime: (int) ($config['cookieLifetime'] ?? 3600),
+            cookieSecure: (bool) ($config['cookieSecure'] ?? true),
+            cookieSameSite: (string) ($config['cookieSameSite'] ?? 'Lax'),
+            cookiePath: (string) ($config['cookiePath'] ?? '/'),
+            cookieDomain: (string) ($config['cookieDomain'] ?? ''),
             loginPage: $loginPage,
         );
 

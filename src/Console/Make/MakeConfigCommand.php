@@ -27,7 +27,7 @@ class MakeConfigCommand extends Command
         $filePath = $configDir . '/config.' . $environment . '.json';
 
         if (file_exists($filePath)) {
-            $this->error("Configuration file 'config/{$environment}.json' already exists.");
+            $this->error("Configuration file 'config/config.{$environment}.json' already exists.");
             return 1;
         }
 

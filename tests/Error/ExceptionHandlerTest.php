@@ -6,6 +6,7 @@ namespace Tests\Error;
 
 use Melodic\Error\ExceptionHandler;
 use Melodic\Http\Exception\HttpException;
+use Melodic\Http\Exception\MethodNotAllowedException;
 use Melodic\Http\JsonResponse;
 use Melodic\Http\Request;
 use Melodic\Http\Response;
@@ -354,5 +355,16 @@ class ExceptionHandlerTest extends TestCase
 
         $generic = $this->handler->handle(new \RuntimeException('boom'), $request);
         $this->assertSame(500, $generic->getStatusCode());
+    }
+
+    public function testMethodNotAllowedResponseIncludesAllowHeader(): void
+    {
+        $request = $this->makeRequest(headers: ['Accept' => 'application/json']);
+        $exception = MethodNotAllowedException::forMethods(['GET', 'HEAD']);
+
+        $response = $this->handler->handle($exception, $request);
+
+        $this->assertSame(405, $response->getStatusCode());
+        $this->assertSame('GET, HEAD', $response->getHeaders()['Allow'] ?? null);
     }
 }

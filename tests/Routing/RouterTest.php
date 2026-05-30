@@ -549,4 +549,23 @@ class RouterTest extends TestCase
 
         $this->assertNull($result);
     }
+
+    public function testAllowedMethodsForPathListsRegisteredMethods(): void
+    {
+        $this->router->get('/users/{id}', 'UserController', 'show');
+        $this->router->put('/users/{id}', 'UserController', 'update');
+        $this->router->delete('/users/{id}', 'UserController', 'destroy');
+
+        $allowed = $this->router->allowedMethodsForPath('/users/42');
+
+        // GET implies HEAD.
+        $this->assertEqualsCanonicalizing(['GET', 'HEAD', 'PUT', 'DELETE'], $allowed);
+    }
+
+    public function testAllowedMethodsForPathIsEmptyForUnknownPath(): void
+    {
+        $this->router->get('/users', 'UserController', 'index');
+
+        $this->assertSame([], $this->router->allowedMethodsForPath('/orders'));
+    }
 }

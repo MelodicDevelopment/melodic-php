@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Melodic\Console\Make;
 
 use Melodic\Console\Command;
+use Melodic\Framework;
 
 class MakeProjectCommand extends Command
 {
@@ -114,9 +115,21 @@ class MakeProjectCommand extends Command
         $content = Stub::render(self::COMPOSER_STUB, [
             'name' => $name,
             'namespace' => str_replace('\\', '\\\\', $namespace . '\\'),
+            'frameworkVersion' => self::frameworkConstraint(),
         ]);
 
         file_put_contents($dir . '/composer.json', $content);
+    }
+
+    /**
+     * Caret constraint pinned to the running framework's major version, so a
+     * scaffolded project always requires a compatible release.
+     */
+    private static function frameworkConstraint(): string
+    {
+        $major = explode('.', Framework::VERSION)[0];
+
+        return '^' . $major . '.0';
     }
 
     private function createConfig(string $dir): void
@@ -183,7 +196,7 @@ class MakeProjectCommand extends Command
     "type": "project",
     "require": {
         "php": ">=8.2",
-        "melodicdev/framework": "^1.0"
+        "melodicdev/framework": "{frameworkVersion}"
     },
     "require-dev": {
         "phpunit/phpunit": "^11.0"

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Melodic\Error;
 
 use Melodic\Http\Exception\HttpException;
+use Melodic\Http\Exception\MethodNotAllowedException;
 use Melodic\Http\JsonResponse;
 use Melodic\Http\Request;
 use Melodic\Http\Response;
@@ -53,11 +54,16 @@ class ExceptionHandler
 
         $message = $this->resolveMessage($exception, $statusCode);
 
-        if ($this->isJsonRequest($request)) {
-            return $this->buildJsonResponse($exception, $statusCode, $message);
+        $response = $this->isJsonRequest($request)
+            ? $this->buildJsonResponse($exception, $statusCode, $message)
+            : $this->buildHtmlResponse($exception, $statusCode, $message);
+
+        // RFC 9110 §15.5.6: a 405 response must advertise the supported methods.
+        if ($exception instanceof MethodNotAllowedException && $exception->getAllowedMethods() !== []) {
+            $response = $response->withHeader('Allow', implode(', ', $exception->getAllowedMethods()));
         }
 
-        return $this->buildHtmlResponse($exception, $statusCode, $message);
+        return $response;
     }
 
     private function resolveStatusCode(\Throwable $e): int

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Data;
 
 use Melodic\Data\Model;
+use Melodic\Data\ModelBindingException;
 use PHPUnit\Framework\TestCase;
 
 final class ModelTest extends TestCase
@@ -224,6 +225,48 @@ final class ModelTest extends TestCase
         $model = PartialUpdateModel::fromArray(['Active' => true]);
 
         $this->assertSame(['Active' => 1], $model->toUpdateArray());
+    }
+
+    // -------------------------------------------------------
+    // Type coercion in fromArray
+    // -------------------------------------------------------
+
+    public function testFromArrayCoercesNumericStringToInt(): void
+    {
+        $model = TestModel::fromArray(['Id' => '5', 'Name' => 'Alice', 'Email' => 'a@b.com']);
+
+        $this->assertSame(5, $model->Id);
+    }
+
+    public function testFromArrayCoercesStringToBool(): void
+    {
+        $model = PartialUpdateModel::fromArray(['Active' => 'true']);
+
+        $this->assertTrue($model->Active);
+    }
+
+    public function testFromArrayThrowsModelBindingExceptionOnUncoercibleInt(): void
+    {
+        $this->expectException(ModelBindingException::class);
+
+        TestModel::fromArray(['Id' => 'not-a-number', 'Name' => 'Alice', 'Email' => 'a@b.com']);
+    }
+
+    public function testFromArrayThrowsWhenNonNullablePropertyGetsNull(): void
+    {
+        $this->expectException(ModelBindingException::class);
+
+        TestModel::fromArray(['Id' => 1, 'Name' => null, 'Email' => 'a@b.com']);
+    }
+
+    public function testFromArrayExposesFieldNameOnBindingError(): void
+    {
+        try {
+            TestModel::fromArray(['Id' => 'nope']);
+            $this->fail('Expected ModelBindingException');
+        } catch (ModelBindingException $e) {
+            $this->assertSame('Id', $e->field);
+        }
     }
 }
 

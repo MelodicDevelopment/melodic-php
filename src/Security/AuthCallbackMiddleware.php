@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Melodic\Security;
 
+use Melodic\Http\Exception\HttpException;
+use Melodic\Http\Exception\MethodNotAllowedException;
 use Melodic\Http\HttpMethod;
 use Melodic\Http\Middleware\MiddlewareInterface;
 use Melodic\Http\Middleware\RequestHandlerInterface;
@@ -28,9 +30,10 @@ class AuthCallbackMiddleware implements MiddlewareInterface
     {
         $path = $request->path();
 
-        // GET /auth/logout
+        // POST /auth/logout — logout is a state-changing action, so it must be a
+        // CSRF-protected POST rather than a GET that can be triggered cross-site.
         if ($path === '/auth/logout') {
-            return $this->handleLogout();
+            return $this->handleLogout($request);
         }
 
         // GET /auth/login — show login page with all providers
@@ -104,34 +107,56 @@ class AuthCallbackMiddleware implements MiddlewareInterface
             return new RedirectResponse("{$this->config->loginPath}?error={$errorMessage}");
         }
 
-        // Regenerate session ID after successful authentication to prevent session fixation
-        if (session_status() === PHP_SESSION_ACTIVE) {
-            session_regenerate_id(true);
-        }
+        // Regenerate session ID after successful authentication to prevent session
+        // fixation. Go through the session abstraction so non-native drivers are
+        // covered too (a raw session_regenerate_id() would silently skip them).
+        $this->session->regenerate(true);
 
         $redirectTo = $this->session->get('melodic_redirect_after_login', $this->config->postLoginRedirect);
         $this->session->remove('melodic_redirect_after_login');
 
         $response = new RedirectResponse((string) $redirectTo);
 
-        return $response->withCookie($this->config->cookieName, $result->token, [
-            'expires' => time() + $this->config->cookieLifetime,
-            'path' => '/',
-            'secure' => isset($_SERVER['HTTPS']),
-            'httponly' => true,
-            'samesite' => 'Lax',
-        ]);
+        return $response->withCookie($this->config->cookieName, $result->token, $this->cookieOptions(
+            time() + $this->config->cookieLifetime,
+        ));
     }
 
-    private function handleLogout(): Response
+    private function handleLogout(Request $request): Response
     {
+        // Only POST may log out, and only with a valid CSRF token.
+        if ($request->method() !== HttpMethod::POST) {
+            throw MethodNotAllowedException::forMethods(['POST']);
+        }
+
+        $submittedToken = (string) $request->body('csrf_token', '');
+
+        if ($submittedToken === '' || !$this->csrf->validate($submittedToken)) {
+            throw HttpException::forbidden('Invalid or expired logout request.');
+        }
+
         $response = new RedirectResponse('/');
 
-        return $response->withCookie($this->config->cookieName, '', [
-            'expires' => time() - 3600,
-            'path' => '/',
+        // Clear with the same attributes the cookie was set with — otherwise the
+        // browser keeps the original cookie.
+        return $response->withCookie($this->config->cookieName, '', $this->cookieOptions(time() - 3600));
+    }
+
+    /**
+     * Cookie attributes for the auth cookie, sourced from config so they match
+     * between set and clear (secure defaults on).
+     *
+     * @return array<string, mixed>
+     */
+    private function cookieOptions(int $expires): array
+    {
+        return [
+            'expires' => $expires,
+            'path' => $this->config->cookiePath,
+            'domain' => $this->config->cookieDomain,
+            'secure' => $this->config->cookieSecure,
             'httponly' => true,
-            'samesite' => 'Lax',
-        ]);
+            'samesite' => $this->config->cookieSameSite,
+        ];
     }
 }

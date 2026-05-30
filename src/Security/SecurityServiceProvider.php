@@ -19,8 +19,16 @@ class SecurityServiceProvider extends ServiceProvider
             return AuthConfig::fromArray($config->get('auth', []));
         });
 
-        $container->singleton(SessionManager::class, function () {
-            return new SessionManager();
+        $container->singleton(SessionManager::class, function (Container $c) {
+            /** @var Configuration $config */
+            $config = $c->get(Configuration::class);
+
+            return new SessionManager(
+                cookieSecure: (bool) $config->get('session.cookieSecure', true),
+                cookieSameSite: (string) $config->get('session.cookieSameSite', 'Lax'),
+                cookiePath: (string) $config->get('session.cookiePath', '/'),
+                cookieDomain: (string) $config->get('session.cookieDomain', ''),
+            );
         });
 
         $container->singleton(AuthProviderRegistry::class, function (Container $c) {

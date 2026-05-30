@@ -202,9 +202,11 @@ class Create{entity}Command implements CommandInterface
 {
     private readonly string $sql;
 
-    public function __construct()
-    {
-        $this->sql = "INSERT INTO {table} () VALUES ()";
+    public function __construct(
+        // TODO: add constructor parameters for the values you are inserting.
+    ) {
+        // TODO: list the columns and matching bound parameters before use.
+        $this->sql = "INSERT INTO {table} (/* column */) VALUES (/* :column */)";
     }
 
     public function getSql(): string
@@ -236,7 +238,8 @@ class Update{entity}Command implements CommandInterface
     public function __construct(
         private readonly int $id,
     ) {
-        $this->sql = "UPDATE {table} SET  WHERE id = :id";
+        // TODO: list the columns to update before use, e.g. "name = :name".
+        $this->sql = "UPDATE {table} SET /* column = :column */ WHERE id = :id";
     }
 
     public function getSql(): string

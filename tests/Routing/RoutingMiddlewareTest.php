@@ -10,6 +10,7 @@ use Melodic\DI\Container;
 use Melodic\Http\JsonResponse;
 use Melodic\Http\Middleware\MiddlewareInterface;
 use Melodic\Http\Middleware\RequestHandlerInterface;
+use Melodic\Http\Exception\MethodNotAllowedException;
 use Melodic\Http\Request;
 use Melodic\Http\Response;
 use Melodic\Routing\Router;
@@ -29,11 +30,35 @@ class StubRequestModel extends Model
     public ?string $email = null;
 }
 
+class StubIntModel extends Model
+{
+    #[Required]
+    public int $count;
+}
+
+class StubService
+{
+    public function label(): string
+    {
+        return 'service-ok';
+    }
+}
+
 class StubController extends Controller
 {
     public function index(): JsonResponse
     {
         return $this->json(['action' => 'index']);
+    }
+
+    public function storeCount(StubIntModel $model): JsonResponse
+    {
+        return $this->json(['action' => 'storeCount', 'count' => $model->count]);
+    }
+
+    public function withService(StubService $service): JsonResponse
+    {
+        return $this->json(['action' => 'withService', 'label' => $service->label()]);
     }
 
     public function show(string $id): JsonResponse
@@ -309,5 +334,77 @@ final class RoutingMiddlewareTest extends TestCase
         $data = json_decode($response->getBody(), true);
         $this->assertSame('withDefault', $data['action']);
         $this->assertSame('json', $data['format']);
+    }
+
+    // -------------------------------------------------------
+    // 405 Method Not Allowed
+    // -------------------------------------------------------
+
+    public function testReturns405WhenPathExistsForDifferentMethod(): void
+    {
+        $this->router->get('/items', StubController::class, 'index');
+        $middleware = $this->createMiddleware();
+        $request = $this->createRequest('POST', '/items');
+
+        try {
+            $middleware->process($request, $this->fallbackHandler);
+            $this->fail('Expected MethodNotAllowedException');
+        } catch (MethodNotAllowedException $e) {
+            $this->assertEqualsCanonicalizing(['GET', 'HEAD'], $e->getAllowedMethods());
+        }
+    }
+
+    public function testFallsThroughTo404WhenPathIsUnknown(): void
+    {
+        $this->router->get('/items', StubController::class, 'index');
+        $middleware = $this->createMiddleware();
+        $request = $this->createRequest('POST', '/nonexistent');
+
+        $response = $middleware->process($request, $this->fallbackHandler);
+
+        $this->assertSame(404, $response->getStatusCode());
+    }
+
+    // -------------------------------------------------------
+    // Model binding coercion & container-injected services
+    // -------------------------------------------------------
+
+    public function testModelBindingCoercesNumericStrings(): void
+    {
+        $this->router->post('/counts', StubController::class, 'storeCount');
+        $middleware = $this->createMiddleware();
+        $request = $this->createRequest('POST', '/counts', ['count' => '5']);
+
+        $response = $middleware->process($request, $this->fallbackHandler);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $data = json_decode($response->getBody(), true);
+        $this->assertSame(5, $data['count']);
+    }
+
+    public function testModelBindingReturns400OnUncoercibleScalar(): void
+    {
+        $this->router->post('/counts', StubController::class, 'storeCount');
+        $middleware = $this->createMiddleware();
+        $request = $this->createRequest('POST', '/counts', ['count' => 'not-a-number']);
+
+        $response = $middleware->process($request, $this->fallbackHandler);
+
+        $this->assertSame(400, $response->getStatusCode());
+        $data = json_decode($response->getBody(), true);
+        $this->assertArrayHasKey('count', $data);
+    }
+
+    public function testNonModelClassParamResolvedFromContainer(): void
+    {
+        $this->router->get('/svc', StubController::class, 'withService');
+        $middleware = $this->createMiddleware();
+        $request = $this->createRequest('GET', '/svc');
+
+        $response = $middleware->process($request, $this->fallbackHandler);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $data = json_decode($response->getBody(), true);
+        $this->assertSame('service-ok', $data['label']);
     }
 }

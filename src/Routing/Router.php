@@ -82,6 +82,33 @@ class Router
     }
 
     /**
+     * Methods registered for a path, regardless of HTTP method. An empty result
+     * means the path is unknown (→ 404); a non-empty result with no match for the
+     * requested method means the method is not allowed (→ 405).
+     *
+     * @return string[]
+     */
+    public function allowedMethodsForPath(string $path): array
+    {
+        $methods = [];
+
+        foreach ($this->routes as $route) {
+            if ($route->matchesPath($path) !== null) {
+                $methods[$route->method->value] = true;
+            }
+        }
+
+        $allowed = array_keys($methods);
+
+        // Any GET resource also answers HEAD (see Route::matches).
+        if (in_array(HttpMethod::GET->value, $allowed, true) && !in_array(HttpMethod::HEAD->value, $allowed, true)) {
+            $allowed[] = HttpMethod::HEAD->value;
+        }
+
+        return $allowed;
+    }
+
+    /**
      * @return Route[]
      */
     public function getRoutes(): array

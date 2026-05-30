@@ -21,6 +21,7 @@ class ViewEngine
         private readonly ?CacheInterface $cache = null,
     ) {}
 
+    /** @param array<string, mixed> $data */
     public function render(string $template, array $data = [], ?string $layout = null): string
     {
         // Snapshot render state so a nested render() (e.g. a partial rendered from
@@ -72,6 +73,7 @@ class ViewEngine
         return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
     }
 
+    /** @param array<string, mixed> $data */
     public function renderCached(string $template, array $data = [], ?string $layout = null, int $ttl = 3600): string
     {
         if ($this->cache === null) {
@@ -118,6 +120,7 @@ class ViewEngine
         $this->currentSection = null;
     }
 
+    /** @param array<string, mixed> $data */
     private function renderTemplate(string $path, array $data): string
     {
         extract($data);

@@ -20,6 +20,7 @@ class MvcController extends Controller
         $this->viewBag = new ViewBag();
     }
 
+    /** @param array<string, mixed> $data */
     protected function view(string $template, array $data = []): Response
     {
         $data['viewBag'] = $this->viewBag;

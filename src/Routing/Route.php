@@ -8,6 +8,10 @@ use Melodic\Http\HttpMethod;
 
 class Route
 {
+    /**
+     * @param string[] $middleware
+     * @param array<string, mixed> $attributes
+     */
     public function __construct(
         public readonly HttpMethod $method,
         public readonly string $pattern,
@@ -17,6 +21,7 @@ class Route
         public readonly array $attributes = [],
     ) {}
 
+    /** @return array<string, string>|null */
     public function matches(HttpMethod $method, string $path): ?array
     {
         // RFC 9110 §9.3.2: any resource supporting GET must also support HEAD.

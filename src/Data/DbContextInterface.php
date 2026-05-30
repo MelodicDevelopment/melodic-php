@@ -9,6 +9,7 @@ interface DbContextInterface
     /**
      * @template T of object
      * @param class-string<T> $class
+     * @param array<string, mixed> $params
      * @return T[]
      */
     public function query(string $class, string $sql, array $params = []): array;
@@ -16,12 +17,15 @@ interface DbContextInterface
     /**
      * @template T of object
      * @param class-string<T> $class
+     * @param array<string, mixed> $params
      * @return T|null
      */
     public function queryFirst(string $class, string $sql, array $params = []): ?object;
 
+    /** @param array<string, mixed> $params */
     public function command(string $sql, array $params = []): int;
 
+    /** @param array<string, mixed> $params */
     public function scalar(string $sql, array $params = []): mixed;
 
     public function transaction(callable $callback): mixed;

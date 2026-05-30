@@ -118,6 +118,7 @@ class OidcAuthProvider implements AuthProviderInterface
         );
     }
 
+    /** @return array<string, mixed> */
     public function validateToken(string $token): array
     {
         try {
@@ -163,6 +164,7 @@ class OidcAuthProvider implements AuthProviderInterface
         return $claims;
     }
 
+    /** @return array<string, mixed> */
     private function exchangeCode(string $code, string $codeVerifier): array
     {
         $postFields = [

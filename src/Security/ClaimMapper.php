@@ -6,11 +6,16 @@ namespace Melodic\Security;
 
 class ClaimMapper
 {
+    /** @param array<string, string> $claimMap */
     public function __construct(
         private readonly array $claimMap = [],
     ) {
     }
 
+    /**
+     * @param array<string, mixed> $rawClaims
+     * @return array<string, mixed>
+     */
     public function map(array $rawClaims): array
     {
         $mapped = [];

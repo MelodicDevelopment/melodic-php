@@ -26,6 +26,7 @@ class AuthConfig
     ) {
     }
 
+    /** @param array<string, mixed> $config */
     public static function fromArray(array $config): self
     {
         $loginPage = isset($config['loginPage']) && is_array($config['loginPage'])

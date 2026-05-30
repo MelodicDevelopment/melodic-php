@@ -6,6 +6,7 @@ namespace Melodic\Security;
 
 class User
 {
+    /** @param string[] $entitlements */
     public function __construct(
         public readonly string $id,
         public readonly string $username,

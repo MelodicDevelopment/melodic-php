@@ -21,6 +21,7 @@ class LoginPageConfig
 	) {
 	}
 
+	/** @param array<string, mixed> $config */
 	public static function fromArray(array $config): self
 	{
 		return new self(

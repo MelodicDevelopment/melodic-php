@@ -6,6 +6,7 @@ namespace Melodic\Http;
 
 class JsonResponse extends Response
 {
+    /** @param array<string, string> $headers */
     public function __construct(
         mixed $data,
         int $statusCode = 200,

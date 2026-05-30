@@ -11,8 +11,11 @@ use RuntimeException;
 
 class Container implements ContainerInterface
 {
+    /** @var array<string, array{concrete: string|callable, singleton: bool}> */
     private array $bindings = [];
+    /** @var array<string, mixed> */
     private array $instances = [];
+    /** @var array<string, bool> */
     private array $resolving = [];
 
     public function get(string $id): mixed

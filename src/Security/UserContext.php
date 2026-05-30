@@ -6,6 +6,7 @@ namespace Melodic\Security;
 
 class UserContext implements UserContextInterface
 {
+    /** @param array<string, mixed> $claims */
     public function __construct(
         private readonly ?User $user = null,
         private readonly ?string $provider = null,
@@ -48,6 +49,7 @@ class UserContext implements UserContextInterface
         return $this->claims[$key] ?? $default;
     }
 
+    /** @return array<string, mixed> */
     public function getClaims(): array
     {
         return $this->claims;
@@ -58,6 +60,7 @@ class UserContext implements UserContextInterface
         return new self();
     }
 
+    /** @param array<string, mixed> $claims */
     public static function fromClaims(array $claims): self
     {
         $user = new User(

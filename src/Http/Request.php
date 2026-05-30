@@ -8,13 +8,26 @@ class Request
 {
     private readonly HttpMethod $method;
     private readonly string $path;
+    /** @var array<string, mixed> */
     private readonly array $queryParams;
+    /** @var array<string, mixed> */
     private readonly array $bodyParams;
+    /** @var array<string, string> */
     private readonly array $headers;
+    /** @var array<string, mixed> */
     private readonly array $attributes;
+    /** @var array<string, mixed> */
     private readonly array $cookies;
     private readonly string $rawBody;
 
+    /**
+     * @param array<string, mixed>|null $server
+     * @param array<string, mixed>|null $query
+     * @param array<string, mixed>|null $body
+     * @param array<string, string>|null $headers
+     * @param array<string, mixed> $attributes
+     * @param array<string, mixed>|null $cookies
+     */
     public function __construct(
         ?array $server = null,
         ?array $query = null,
@@ -132,6 +145,10 @@ class Request
         return $this->rawBody;
     }
 
+    /**
+     * @param array<string, mixed> $server
+     * @return array<string, string>
+     */
     private static function extractHeaders(array $server): array
     {
         $headers = [];

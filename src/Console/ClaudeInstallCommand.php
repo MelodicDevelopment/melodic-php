@@ -69,6 +69,7 @@ class ClaudeInstallCommand extends Command
         return 0;
     }
 
+    /** @param string[] $args */
     private function installFile(string $source, string $dest, array $args): bool
     {
         if (!file_exists($source)) {

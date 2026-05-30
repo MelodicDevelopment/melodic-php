@@ -29,6 +29,7 @@ class OAuthClient
         return $this->provider->getAuthorizationEndpoint() . '?' . $params;
     }
 
+    /** @return array<string, mixed> */
     public function exchangeCode(string $code, string $codeVerifier): array
     {
         $postData = http_build_query([

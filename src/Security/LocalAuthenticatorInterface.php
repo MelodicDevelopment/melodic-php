@@ -12,6 +12,7 @@ interface LocalAuthenticatorInterface
      * Returns an array of user claims on success (must include 'sub', 'username', 'email').
      * Throws SecurityException on failure.
      *
+     * @return array<string, mixed>
      * @throws SecurityException
      */
     public function authenticate(string $username, string $password): array;

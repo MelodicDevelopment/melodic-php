@@ -125,6 +125,7 @@ class OAuth2AuthProvider implements AuthProviderInterface
             ?? throw new SecurityException('No access token received from authorization server.');
     }
 
+    /** @return array<string, mixed> */
     private function fetchUserInfo(string $accessToken): array
     {
         return OAuthClient::requestJson(
@@ -134,6 +135,7 @@ class OAuth2AuthProvider implements AuthProviderInterface
         );
     }
 
+    /** @param array<string, mixed> $claims */
     private function issueLocalJwt(array $claims): string
     {
         $now = time();

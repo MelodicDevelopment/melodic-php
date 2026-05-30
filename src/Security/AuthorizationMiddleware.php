@@ -12,6 +12,7 @@ use Melodic\Http\Response;
 
 class AuthorizationMiddleware implements MiddlewareInterface
 {
+    /** @param string[] $requiredEntitlements */
     public function __construct(
         private readonly array $requiredEntitlements = [],
         private readonly bool $requireAuthentication = true,

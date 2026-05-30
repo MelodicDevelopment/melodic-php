@@ -59,8 +59,9 @@ review. See [`MIGRATION-3.0.md`](MIGRATION-3.0.md) for upgrade steps.
   `cookieDomain`, `auth.oidcCacheDir`, and `session.*` equivalents.
 - CORS wildcard origins match multi-level subdomains.
 
-### Known limitations
+### Tooling
 
-- `composer analyse` (PHPStan level 6) is not yet clean: ~143
-  `missingType.iterableValue` warnings remain (type-annotation gaps, not runtime
-  bugs), to be resolved in a follow-up.
+- **Static analysis is now clean**: `composer analyse` (PHPStan level 6) reports
+  0 errors. The ~143 previously-open `missingType.iterableValue` warnings were
+  resolved by adding generic `array<K, V>` annotations across the codebase (no
+  behavior change).

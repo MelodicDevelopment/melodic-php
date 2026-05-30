@@ -285,7 +285,7 @@ vendor/bin/melodic claude:install                      # Install Claude Code age
 - **CQRS data access** — Query/Command objects executed via DbContext
 - **No facades, no mediator** — direct, explicit instantiation
 - **Secure by default** — auth/session cookies default to Secure+HttpOnly+SameSite; logout is a CSRF-protected POST; JWTs require `iss`+`exp`; OAuth2/OIDC use PKCE. See `MIGRATION-3.0.md`.
-- **Static analysis** — `composer analyse` (PHPStan level 6) is **not yet clean**: ~143 `missingType.iterableValue` warnings remain (type-annotation gaps, not runtime bugs). Don't claim it's clean; don't add new ones.
+- **Static analysis** — `composer analyse` (PHPStan level 6) is **clean (0 errors)**. Keep it that way: annotate iterable types (`array<K, V>`) on new code; CI should fail on any regression.
 
 ## Versioning & Publishing
 

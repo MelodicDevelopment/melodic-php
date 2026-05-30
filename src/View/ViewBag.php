@@ -6,6 +6,7 @@ namespace Melodic\View;
 
 class ViewBag
 {
+    /** @var array<string, mixed> */
     private array $data = [];
 
     public function __get(string $name): mixed
@@ -23,6 +24,7 @@ class ViewBag
         return isset($this->data[$name]);
     }
 
+    /** @return array<string, mixed> */
     public function toArray(): array
     {
         return $this->data;

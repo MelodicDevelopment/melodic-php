@@ -15,6 +15,7 @@ class JwtValidator
     ) {
     }
 
+    /** @return array<string, mixed> */
     public function validate(string $token): array
     {
         $issuer = $this->peekIssuer($token);
@@ -26,6 +27,7 @@ class JwtValidator
         return $this->validateExternal($token);
     }
 
+    /** @return array<string, mixed> */
     private function validateLocal(string $token): array
     {
         try {
@@ -54,6 +56,7 @@ class JwtValidator
         return $claims;
     }
 
+    /** @return array<string, mixed> */
     private function validateExternal(string $token): array
     {
         $oidcProviders = $this->registry->getByType(AuthProviderType::Oidc);

@@ -13,6 +13,7 @@ class Model implements \JsonSerializable
     /** @var array<string, true> Resolved property names that were sourced from fromArray input. */
     private array $_providedKeys = [];
 
+    /** @param array<string, mixed> $data */
     public static function fromArray(array $data): static
     {
         $reflector = new ReflectionClass(static::class);
@@ -150,6 +151,7 @@ class Model implements \JsonSerializable
         throw new ModelBindingException($field, "Field '{$field}' must be a string.");
     }
 
+    /** @return array<string, mixed> */
     public function toArray(): array
     {
         $reflector = new ReflectionClass($this);
@@ -172,6 +174,8 @@ class Model implements \JsonSerializable
     /**
      * Return all initialized properties with PascalCase keys.
      * Booleans are converted to ints for PDO compatibility.
+     *
+     * @return array<string, mixed>
      */
     public function toPascalArray(): array
     {
@@ -196,6 +200,8 @@ class Model implements \JsonSerializable
      * programmatically after fromArray are NOT tracked — fields_set reflects the
      * wire, not subsequent mutation. Booleans are converted to ints for PDO
      * compatibility.
+     *
+     * @return array<string, mixed>
      */
     public function toUpdateArray(): array
     {

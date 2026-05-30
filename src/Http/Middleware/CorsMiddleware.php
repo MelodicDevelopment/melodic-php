@@ -10,12 +10,16 @@ use Melodic\Http\Response;
 
 class CorsMiddleware implements MiddlewareInterface
 {
+    /** @var string[] */
     private readonly array $allowedOrigins;
+    /** @var string[] */
     private readonly array $allowedMethods;
+    /** @var string[] */
     private readonly array $allowedHeaders;
     private readonly int $maxAge;
     private readonly bool $allowCredentials;
 
+    /** @param array<string, mixed> $config */
     public function __construct(array $config = [])
     {
         $this->allowedOrigins = $config['allowedOrigins'] ?? ['*'];

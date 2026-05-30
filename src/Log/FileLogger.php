@@ -15,46 +15,55 @@ class FileLogger implements LoggerInterface
         $this->minSeverity = $minLevel->severity();
     }
 
+    /** @param array<string, mixed> $context */
     public function emergency(string $message, array $context = []): void
     {
         $this->log(LogLevel::EMERGENCY, $message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public function alert(string $message, array $context = []): void
     {
         $this->log(LogLevel::ALERT, $message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public function critical(string $message, array $context = []): void
     {
         $this->log(LogLevel::CRITICAL, $message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public function error(string $message, array $context = []): void
     {
         $this->log(LogLevel::ERROR, $message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public function warning(string $message, array $context = []): void
     {
         $this->log(LogLevel::WARNING, $message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public function notice(string $message, array $context = []): void
     {
         $this->log(LogLevel::NOTICE, $message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public function info(string $message, array $context = []): void
     {
         $this->log(LogLevel::INFO, $message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public function debug(string $message, array $context = []): void
     {
         $this->log(LogLevel::DEBUG, $message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public function log(LogLevel $level, string $message, array $context = []): void
     {
         if ($level->severity() > $this->minSeverity) {
@@ -65,6 +74,7 @@ class FileLogger implements LoggerInterface
         $this->write($entry);
     }
 
+    /** @param array<string, mixed> $context */
     private function formatEntry(LogLevel $level, string $message, array $context): string
     {
         $timestamp = date('Y-m-d H:i:s');
@@ -84,6 +94,7 @@ class FileLogger implements LoggerInterface
         return $entry . "\n";
     }
 
+    /** @param array<string, mixed> $context */
     private function interpolate(string $message, array $context): string
     {
         $replacements = [];

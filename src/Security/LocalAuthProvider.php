@@ -58,6 +58,7 @@ class LocalAuthProvider implements AuthProviderInterface
         );
     }
 
+    /** @param array<string, mixed> $claims */
     private function issueLocalJwt(array $claims): string
     {
         $now = time();

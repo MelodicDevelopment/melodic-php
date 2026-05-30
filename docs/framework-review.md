@@ -48,9 +48,6 @@ These are **enforced in code**, not just intended:
 
 Honest gaps a consumer should be aware of:
 
-- **Static analysis is not clean.** `composer analyse` (PHPStan level 6) currently
-  reports ~143 `missingType.iterableValue`-style warnings. These are type-annotation
-  gaps, not runtime bugs, and are being driven to zero in a dedicated pass.
 - **No OIDC `nonce` validation.**
 - **No rate limiting** on local authentication.
 - **No Content-Security-Policy** header helper.
@@ -66,13 +63,13 @@ Honest gaps a consumer should be aware of:
 - Test suite: **654+ tests** (`composer test`, PHPUnit 11), SQLite-backed
   DbContext tests, process-isolated tests for session/OAuth flows.
 - CI matrix: PHP 8.2 / 8.3 / 8.4.
-- `phpstan.neon` at level 6 (`composer analyse`) — see "Known limitations".
+- `phpstan.neon` at level 6 (`composer analyse`) — **clean, 0 errors**.
 
 ## Overall
 
 The architecture and code quality are genuinely strong — clean layering, pragmatic
 CQRS, exemplary modern PHP. After the 3.0 hardening pass the security defaults are
-sound and enforced. The main outstanding work is finishing the PHPStan cleanup and
+sound and enforced, static analysis is clean at level 6, and the remaining work is
 the optional feature gaps above. This is a credible, lightweight framework — between
 Slim and Laravel — suitable for production use when configured with the secure
 defaults it now ships.

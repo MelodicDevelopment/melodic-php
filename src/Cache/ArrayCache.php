@@ -6,6 +6,7 @@ namespace Melodic\Cache;
 
 class ArrayCache implements CacheInterface
 {
+    /** @var array<string, array{value: mixed, expires: int|null}> */
     private array $cache = [];
 
     public function get(string $key, mixed $default = null): mixed

@@ -6,6 +6,7 @@ namespace Melodic\Session;
 
 class ArraySession implements SessionInterface
 {
+    /** @var array<string, mixed> */
     private array $data = [];
     private bool $started = false;
 

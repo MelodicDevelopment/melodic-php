@@ -19,10 +19,12 @@ class AuthProviderConfig
         public readonly string $redirectUri = '',
         public readonly string $audience = '',
         public readonly string $scopes = '',
+        /** @var array<string, string> */
         public readonly array $claimMap = [],
     ) {
     }
 
+    /** @param array<string, mixed> $config */
     public static function fromArray(string $name, array $config): self
     {
         return new self(

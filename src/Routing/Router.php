@@ -11,34 +11,58 @@ class Router
     /** @var Route[] */
     private array $routes = [];
 
-    /** @var array{prefix: string, middleware: array, attributes: array}[] */
+    /** @var array{prefix: string, middleware: string[], attributes: array<string, mixed>}[] */
     private array $groupStack = [];
 
+    /**
+     * @param string[] $middleware
+     * @param array<string, mixed> $attributes
+     */
     public function get(string $path, string $controller, string $action, array $middleware = [], array $attributes = []): self
     {
         return $this->addRoute(HttpMethod::GET, $path, $controller, $action, $middleware, $attributes);
     }
 
+    /**
+     * @param string[] $middleware
+     * @param array<string, mixed> $attributes
+     */
     public function post(string $path, string $controller, string $action, array $middleware = [], array $attributes = []): self
     {
         return $this->addRoute(HttpMethod::POST, $path, $controller, $action, $middleware, $attributes);
     }
 
+    /**
+     * @param string[] $middleware
+     * @param array<string, mixed> $attributes
+     */
     public function put(string $path, string $controller, string $action, array $middleware = [], array $attributes = []): self
     {
         return $this->addRoute(HttpMethod::PUT, $path, $controller, $action, $middleware, $attributes);
     }
 
+    /**
+     * @param string[] $middleware
+     * @param array<string, mixed> $attributes
+     */
     public function delete(string $path, string $controller, string $action, array $middleware = [], array $attributes = []): self
     {
         return $this->addRoute(HttpMethod::DELETE, $path, $controller, $action, $middleware, $attributes);
     }
 
+    /**
+     * @param string[] $middleware
+     * @param array<string, mixed> $attributes
+     */
     public function patch(string $path, string $controller, string $action, array $middleware = [], array $attributes = []): self
     {
         return $this->addRoute(HttpMethod::PATCH, $path, $controller, $action, $middleware, $attributes);
     }
 
+    /**
+     * @param string[] $middleware
+     * @param array<string, mixed> $attributes
+     */
     public function group(string $prefix, callable $callback, array $middleware = [], array $attributes = []): self
     {
         $this->groupStack[] = [
@@ -54,6 +78,10 @@ class Router
         return $this;
     }
 
+    /**
+     * @param string[] $middleware
+     * @param array<string, mixed> $attributes
+     */
     public function apiResource(string $path, string $controller, array $middleware = [], array $attributes = []): self
     {
         $this->get($path, $controller, 'index', $middleware, $attributes);
@@ -66,7 +94,7 @@ class Router
     }
 
     /**
-     * @return array{route: Route, params: array}|null
+     * @return array{route: Route, params: array<string, string>}|null
      */
     public function match(HttpMethod $method, string $path): ?array
     {
@@ -116,6 +144,10 @@ class Router
         return $this->routes;
     }
 
+    /**
+     * @param string[] $middleware
+     * @param array<string, mixed> $attributes
+     */
     private function addRoute(
         HttpMethod $method,
         string $path,
@@ -151,6 +183,7 @@ class Router
         return $prefix;
     }
 
+    /** @return string[] */
     private function getCurrentMiddleware(): array
     {
         $middleware = [];
@@ -162,6 +195,7 @@ class Router
         return $middleware;
     }
 
+    /** @return array<string, mixed> */
     private function getCurrentAttributes(): array
     {
         $attributes = [];

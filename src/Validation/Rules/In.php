@@ -11,6 +11,7 @@ class In
 {
     public readonly string $message;
 
+    /** @param array<int, mixed> $values */
     public function __construct(
         public readonly array $values,
         ?string $message = null

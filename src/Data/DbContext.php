@@ -14,6 +14,7 @@ class DbContext implements DbContextInterface
 {
     private readonly PDO $pdo;
 
+    /** @param array<int, mixed> $options */
     public function __construct(
         PDO|string $dsn,
         ?string $username = null,
@@ -29,6 +30,7 @@ class DbContext implements DbContextInterface
         }
     }
 
+    /** @param array<string, mixed> $params */
     public function query(string $class, string $sql, array $params = []): array
     {
         $statement = $this->prepareAndExecute($sql, $params);
@@ -42,6 +44,7 @@ class DbContext implements DbContextInterface
         );
     }
 
+    /** @param array<string, mixed> $params */
     public function queryFirst(string $class, string $sql, array $params = []): ?object
     {
         $statement = $this->prepareAndExecute($sql, $params);
@@ -54,6 +57,7 @@ class DbContext implements DbContextInterface
         return $this->hydrate(new ReflectionClass($class), $row);
     }
 
+    /** @param array<string, mixed> $params */
     public function command(string $sql, array $params = []): int
     {
         $statement = $this->prepareAndExecute($sql, $params);
@@ -66,6 +70,8 @@ class DbContext implements DbContextInterface
      * rows — which `fetchColumn()` also returns for a legitimate false/null/0/''
      * value, so this cannot distinguish "no rows" from a falsy result. For a
      * COUNT(*) the value is reliable; for nullable columns, prefer queryFirst().
+     *
+     * @param array<string, mixed> $params
      */
     public function scalar(string $sql, array $params = []): mixed
     {
@@ -109,6 +115,7 @@ class DbContext implements DbContextInterface
         return (int) $this->pdo->lastInsertId();
     }
 
+    /** @param array<string, mixed> $params */
     private function prepareAndExecute(string $sql, array $params): PDOStatement
     {
         $statement = $this->pdo->prepare($sql);
@@ -117,6 +124,10 @@ class DbContext implements DbContextInterface
         return $statement;
     }
 
+    /**
+     * @param ReflectionClass<object> $reflector
+     * @param array<string, mixed> $row
+     */
     private function hydrate(ReflectionClass $reflector, array $row): object
     {
         if ($reflector->getName() === 'stdClass') {

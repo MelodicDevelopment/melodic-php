@@ -30,6 +30,7 @@ class Validator
     }
 
     /**
+     * @param array<string, mixed> $data
      * @param class-string $dtoClass
      */
     public function validateArray(array $data, string $dtoClass): ValidationResult

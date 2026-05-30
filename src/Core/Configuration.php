@@ -15,8 +15,10 @@ use RuntimeException;
  */
 class Configuration
 {
+    /** @var array<string, mixed> */
     private array $data;
 
+    /** @param array<string, mixed> $data */
     public function __construct(array $data = [])
     {
         $this->data = $data;
@@ -95,16 +97,23 @@ class Configuration
         return true;
     }
 
+    /** @return array<string, mixed> */
     public function all(): array
     {
         return $this->data;
     }
 
+    /** @param array<string, mixed> $data */
     public function merge(array $data): void
     {
         $this->data = $this->deepMerge($this->data, $data);
     }
 
+    /**
+     * @param array<string, mixed> $base
+     * @param array<string, mixed> $override
+     * @return array<string, mixed>
+     */
     private function deepMerge(array $base, array $override): array
     {
         foreach ($override as $key => $value) {

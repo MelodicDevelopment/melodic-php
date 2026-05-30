@@ -6,8 +6,10 @@ namespace Melodic\Http;
 
 class Response
 {
+    /** @var array<string, array<string, mixed>> */
     private array $cookies = [];
 
+    /** @param array<string, string> $headers */
     public function __construct(
         private int $statusCode = 200,
         private string $body = '',
@@ -38,6 +40,7 @@ class Response
         return $response;
     }
 
+    /** @param array<string, mixed> $options */
     public function withCookie(string $name, string $value, array $options = []): static
     {
         $response = clone $this;
@@ -59,6 +62,7 @@ class Response
         return $this->statusCode;
     }
 
+    /** @return array<string, string> */
     public function getHeaders(): array
     {
         return $this->headers;

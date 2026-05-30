@@ -13,11 +13,13 @@ class OidcProvider
     ) {
     }
 
+    /** @return array<string, mixed> */
     public function discover(): array
     {
         return $this->fetchCached('oidc_discovery.json', $this->discoveryUrl);
     }
 
+    /** @return array<string, mixed> */
     public function getJwks(): array
     {
         $discovery = $this->discover();
@@ -54,6 +56,7 @@ class OidcProvider
             ?? throw new SecurityException('OIDC discovery document missing token_endpoint.');
     }
 
+    /** @return array<string, mixed> */
     private function fetchCached(string $filename, string $url): array
     {
         // 0700: discovery/JWKS docs drive signature validation, so the cache must

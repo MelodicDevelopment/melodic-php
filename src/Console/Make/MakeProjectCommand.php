@@ -63,6 +63,7 @@ class MakeProjectCommand extends Command
         return 0;
     }
 
+    /** @param string[] $args */
     private function parseType(array $args): string
     {
         foreach ($args as $arg) {

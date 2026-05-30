@@ -18,5 +18,6 @@ interface UserContextInterface
 
     public function getClaim(string $key, mixed $default = null): mixed;
 
+    /** @return array<string, mixed> */
     public function getClaims(): array;
 }

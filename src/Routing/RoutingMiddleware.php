@@ -54,6 +54,7 @@ class RoutingMiddleware implements MiddlewareInterface
 
         // Build a handler that invokes the controller action
         $controllerHandler = new class($this->container, $route, $params) implements RequestHandlerInterface {
+            /** @param array<string, string> $params */
             public function __construct(
                 private readonly Container $container,
                 private readonly Route $route,

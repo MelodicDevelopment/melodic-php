@@ -159,4 +159,25 @@ final class ResponseTest extends TestCase
         $this->assertSame(['Content-Type' => 'application/json'], $response->getHeaders());
         $this->assertSame('{"id":1}', $response->getBody());
     }
+
+    public function testSendOutputsBodyByDefault(): void
+    {
+        $response = new Response(statusCode: 200, body: 'hello world');
+
+        ob_start();
+        $response->send();
+
+        $this->assertSame('hello world', ob_get_clean());
+    }
+
+    public function testSendSuppressesBodyForHeadRequests(): void
+    {
+        // HEAD responses must carry the same headers as GET but no message body.
+        $response = new Response(statusCode: 200, body: 'hello world');
+
+        ob_start();
+        $response->send(includeBody: false);
+
+        $this->assertSame('', ob_get_clean());
+    }
 }

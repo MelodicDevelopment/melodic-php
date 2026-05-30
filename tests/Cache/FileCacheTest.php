@@ -147,4 +147,44 @@ class FileCacheTest extends TestCase
 
         $this->assertSame('value', $this->cache->get('key with spaces/and:special!chars'));
     }
+
+    public function testCorruptFileIsTreatedAsMissAndPruned(): void
+    {
+        $path = $this->cacheDir . '/' . md5('corrupt') . '.cache';
+        file_put_contents($path, 'this is not a serialized entry');
+
+        $this->assertSame('default', $this->cache->get('corrupt', 'default'));
+        $this->assertFalse($this->cache->has('corrupt'));
+        $this->assertFileDoesNotExist($path);
+    }
+
+    public function testClearOnlyRemovesCacheFiles(): void
+    {
+        $this->cache->set('keep-me-cached', 'value');
+        $unrelated = $this->cacheDir . '/important.txt';
+        file_put_contents($unrelated, 'do not delete');
+
+        $this->assertTrue($this->cache->clear());
+
+        $this->assertNull($this->cache->get('keep-me-cached'));
+        $this->assertFileExists($unrelated);
+
+        unlink($unrelated);
+    }
+
+    public function testNonPositiveTtlDoesNotStore(): void
+    {
+        $this->assertTrue($this->cache->set('ephemeral', 'value', 0));
+
+        $this->assertNull($this->cache->get('ephemeral'));
+        $this->assertFalse($this->cache->has('ephemeral'));
+    }
+
+    public function testNonPositiveTtlClearsExistingEntry(): void
+    {
+        $this->cache->set('replaceme', 'old');
+        $this->cache->set('replaceme', 'new', -5);
+
+        $this->assertNull($this->cache->get('replaceme'));
+    }
 }

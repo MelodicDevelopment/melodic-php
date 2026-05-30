@@ -21,6 +21,11 @@ class In
 
     public function validate(mixed $value): bool
     {
+        // Optional by default: only #[Required] rejects an absent/null value.
+        if ($value === null) {
+            return true;
+        }
+
         return in_array($value, $this->values, true);
     }
 }

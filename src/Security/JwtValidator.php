@@ -35,6 +35,12 @@ class JwtValidator
             throw new SecurityException('Invalid token: ' . $e->getMessage(), 0, $e);
         }
 
+        // Require an expiry. firebase/php-jwt only rejects expired tokens when
+        // `exp` is present, so a token that omits it would otherwise never expire.
+        if (!isset($claims['exp'])) {
+            throw new SecurityException('Token is missing the required exp claim.');
+        }
+
         $tokenAudience = $claims['aud'] ?? null;
 
         if (is_array($tokenAudience)) {

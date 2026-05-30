@@ -594,14 +594,48 @@ class ValidatorTest extends TestCase
 
     public function testNonRequiredFieldSkipsOtherRulesWhenNull(): void
     {
+        // email is not #[Required], so omitting it must pass: format rules only
+        // apply when a value is present (nullable-by-default semantics).
         $result = $this->validator->validateArray(
             ['name' => 'John'],
             OptionalFieldDto::class
         );
 
-        // email is not required, but Email rule will fail for null
-        // This validates that each rule runs independently
+        $this->assertTrue($result->isValid);
+        $this->assertArrayNotHasKey('email', $result->errors);
+    }
+
+    public function testNonRequiredFieldStillValidatesWhenPresent(): void
+    {
+        // When an optional field IS provided, its format rules still apply.
+        $result = $this->validator->validateArray(
+            ['name' => 'John', 'email' => 'not-an-email'],
+            OptionalFieldDto::class
+        );
+
         $this->assertFalse($result->isValid);
         $this->assertArrayHasKey('email', $result->errors);
+    }
+
+    public function testNonRequiredFieldPassesWhenExplicitlyNull(): void
+    {
+        $result = $this->validator->validateArray(
+            ['name' => 'John', 'email' => null],
+            OptionalFieldDto::class
+        );
+
+        $this->assertTrue($result->isValid);
+    }
+
+    public function testRequiredFieldStillRejectsNull(): void
+    {
+        // The nullable-by-default change must not weaken #[Required].
+        $result = $this->validator->validateArray(
+            ['email' => 'john@example.com'],
+            OptionalFieldDto::class
+        );
+
+        $this->assertFalse($result->isValid);
+        $this->assertArrayHasKey('name', $result->errors);
     }
 }

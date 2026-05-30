@@ -128,16 +128,36 @@ class OidcAuthProvider implements AuthProviderInterface
             throw new SecurityException('Invalid token: ' . $e->getMessage(), 0, $e);
         }
 
-        if ($this->config->audience !== '') {
-            $tokenAudience = $claims['aud'] ?? null;
+        // Require an expiry. firebase/php-jwt only rejects expired tokens when
+        // `exp` is present, so a token that omits it would otherwise never expire.
+        if (!isset($claims['exp'])) {
+            throw new SecurityException('Token is missing the required exp claim.');
+        }
 
-            if (is_array($tokenAudience)) {
-                if (!in_array($this->config->audience, $tokenAudience, true)) {
-                    throw new SecurityException('Invalid token audience.');
-                }
-            } elseif ($tokenAudience !== $this->config->audience) {
+        // Bind the token to this provider's issuer. Without this, any token whose
+        // signature verifies against this JWKS would be accepted regardless of
+        // which issuer minted it (cross-provider / cross-tenant token confusion).
+        $expectedIssuer = $this->oidcProvider->getIssuer();
+        $tokenIssuer = $claims['iss'] ?? null;
+
+        if ($tokenIssuer !== $expectedIssuer) {
+            throw new SecurityException('Invalid token issuer.');
+        }
+
+        // Validate audience. Default to the configured client_id when no explicit
+        // audience is set, so the audience check is never silently skipped.
+        $expectedAudience = $this->config->audience !== ''
+            ? $this->config->audience
+            : $this->config->clientId;
+
+        $tokenAudience = $claims['aud'] ?? null;
+
+        if (is_array($tokenAudience)) {
+            if (!in_array($expectedAudience, $tokenAudience, true)) {
                 throw new SecurityException('Invalid token audience.');
             }
+        } elseif ($tokenAudience !== $expectedAudience) {
+            throw new SecurityException('Invalid token audience.');
         }
 
         return $claims;

@@ -30,6 +30,14 @@ class OidcProvider
         return $this->fetchCached('oidc_jwks.json', $jwksUri);
     }
 
+    public function getIssuer(): string
+    {
+        $discovery = $this->discover();
+
+        return $discovery['issuer']
+            ?? throw new SecurityException('OIDC discovery document missing issuer.');
+    }
+
     public function getAuthorizationEndpoint(): string
     {
         $discovery = $this->discover();

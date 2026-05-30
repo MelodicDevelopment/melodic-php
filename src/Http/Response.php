@@ -69,7 +69,15 @@ class Response
         return $this->body;
     }
 
-    public function send(): void
+    /**
+     * Send the response to the client.
+     *
+     * @param bool $includeBody When false, headers and cookies are sent but the
+     *                          body is suppressed — required for HEAD requests
+     *                          (RFC 9110 §9.3.2), which must mirror GET's headers
+     *                          without a message body.
+     */
+    public function send(bool $includeBody = true): void
     {
         http_response_code($this->statusCode);
 
@@ -88,6 +96,8 @@ class Response
             ]);
         }
 
-        echo $this->body;
+        if ($includeBody) {
+            echo $this->body;
+        }
     }
 }

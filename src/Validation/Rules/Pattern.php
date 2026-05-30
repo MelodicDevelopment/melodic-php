@@ -20,6 +20,11 @@ class Pattern
 
     public function validate(mixed $value): bool
     {
+        // Optional by default: only #[Required] rejects an absent/null value.
+        if ($value === null) {
+            return true;
+        }
+
         if (!is_string($value)) {
             return false;
         }

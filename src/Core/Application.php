@@ -14,6 +14,7 @@ use Melodic\Http\Middleware\RequestHandlerInterface;
 use Melodic\Http\Request;
 use Melodic\Http\Response;
 use Melodic\Http\Exception\NotFoundException;
+use Melodic\Http\HttpMethod;
 use Melodic\Log\LoggerInterface;
 use Melodic\Log\NullLogger;
 use Melodic\Routing\Router;
@@ -207,7 +208,7 @@ class Application
             }
 
             $response = $pipeline->handle($request);
-            $response->send();
+            $response->send($request->method() !== HttpMethod::HEAD);
         } catch (\Throwable $e) {
             // Last-resort safety net for catastrophic failures
             // Use ExceptionHandler if available, otherwise fall back to plain text
@@ -215,7 +216,7 @@ class Application
 
             if (isset($exceptionHandler)) {
                 $response = $exceptionHandler->handle($e, $request);
-                $response->send();
+                $response->send($request->method() !== HttpMethod::HEAD);
             } else {
                 http_response_code(500);
                 header('Content-Type: text/plain; charset=UTF-8');

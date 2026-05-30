@@ -36,13 +36,23 @@ class OAuth2AuthProvider implements AuthProviderInterface
     public function handleLogin(Request $request, SessionManager $session): Response
     {
         $state = OAuthClient::generateState();
+        $codeVerifier = OAuthClient::generateCodeVerifier();
+
         $session->set("melodic_oauth_state_{$this->config->name}", $state);
+        $session->set("melodic_oauth_verifier_{$this->config->name}", $codeVerifier);
+
+        $codeChallenge = rtrim(strtr(base64_encode(hash('sha256', $codeVerifier, true)), '+/', '-_'), '=');
 
         $params = [
+            // response_type=code is required by the OAuth 2.0 authorization-code
+            // flow; without it providers reject or mishandle the authorize request.
+            'response_type' => 'code',
             'client_id' => $this->config->clientId,
             'redirect_uri' => $this->config->redirectUri,
             'scope' => $this->config->scopes,
             'state' => $state,
+            'code_challenge' => $codeChallenge,
+            'code_challenge_method' => 'S256',
         ];
 
         $authorizationUrl = $this->config->authorizeUrl . '?' . http_build_query($params);
@@ -66,13 +76,20 @@ class OAuth2AuthProvider implements AuthProviderInterface
         }
 
         $savedState = $session->get("melodic_oauth_state_{$this->config->name}");
+        $codeVerifier = $session->get("melodic_oauth_verifier_{$this->config->name}");
+
         $session->remove("melodic_oauth_state_{$this->config->name}");
+        $session->remove("melodic_oauth_verifier_{$this->config->name}");
 
         if ($savedState === null || !hash_equals((string) $savedState, (string) $state)) {
             throw new SecurityException('Invalid OAuth state parameter.');
         }
 
-        $accessToken = $this->exchangeCode((string) $code);
+        if ($codeVerifier === null) {
+            throw new SecurityException('Missing PKCE code verifier.');
+        }
+
+        $accessToken = $this->exchangeCode((string) $code, (string) $codeVerifier);
         $rawClaims = $this->fetchUserInfo($accessToken);
         $claims = $this->claimMapper->map($rawClaims);
         $claims['provider'] = $this->config->name;
@@ -86,7 +103,7 @@ class OAuth2AuthProvider implements AuthProviderInterface
         );
     }
 
-    private function exchangeCode(string $code): string
+    private function exchangeCode(string $code, string $codeVerifier): string
     {
         $postFields = [
             'grant_type' => 'authorization_code',
@@ -94,6 +111,7 @@ class OAuth2AuthProvider implements AuthProviderInterface
             'redirect_uri' => $this->config->redirectUri,
             'client_id' => $this->config->clientId,
             'client_secret' => $this->config->clientSecret,
+            'code_verifier' => $codeVerifier,
         ];
 
         $postData = http_build_query($postFields);

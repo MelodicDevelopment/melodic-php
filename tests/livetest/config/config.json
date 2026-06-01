@@ -1,0 +1,20 @@
+{
+    "app": {
+        "debug": true
+    },
+    "session": {
+        "cookieSecure": false,
+        "cookieSameSite": "Lax"
+    },
+    "auth": {
+        "api": { "enabled": false },
+        "web": { "enabled": true },
+        "postLoginRedirect": "/",
+        "cookieName": "melodic_auth",
+        "cookieSecure": false,
+        "cookieSameSite": "Lax",
+        "loginPage": {
+            "title": "Entra Live Test"
+        }
+    }
+}

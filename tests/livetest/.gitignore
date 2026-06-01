@@ -1,0 +1,2 @@
+# Real secrets live here — never commit. Copy config.dev.json.example to start.
+config/config.dev.json

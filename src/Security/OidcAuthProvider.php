@@ -17,9 +17,10 @@ class OidcAuthProvider implements AuthProviderInterface
     public function __construct(
         private readonly AuthProviderConfig $config,
         string $cacheDir,
+        ?OidcProvider $oidcProvider = null,
     ) {
         $providerCacheDir = rtrim($cacheDir, '/') . '/' . $this->config->name;
-        $this->oidcProvider = new OidcProvider($this->config->discoveryUrl, $providerCacheDir);
+        $this->oidcProvider = $oidcProvider ?? new OidcProvider($this->config->discoveryUrl, $providerCacheDir);
     }
 
     public function getName(): string

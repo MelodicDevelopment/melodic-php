@@ -104,15 +104,29 @@ class OAuthClient
         // $http_response_header is populated by the HTTP stream wrapper in this
         // scope once a response has been read (guaranteed here since we returned
         // above on a transport failure).
-        $status = self::statusFromHeaders($http_response_header);
-        $decoded = json_decode($response, true);
+        $status = self::statusFromHeaders($http_response_header) ?? 0;
+
+        return self::decodeJsonResponse($url, $status, $response);
+    }
+
+    /**
+     * Decode and validate an HTTP JSON response body: rejects a non-JSON body, a
+     * non-2xx status, or a body carrying an OAuth `error`. Separated from the
+     * transport above so the success/failure decision is unit-testable without a
+     * network round-trip.
+     *
+     * @return array<string, mixed>
+     */
+    public static function decodeJsonResponse(string $url, int $status, string $body): array
+    {
+        $decoded = json_decode($body, true);
 
         if (!is_array($decoded)) {
             throw new SecurityException("Invalid JSON response from {$url}.");
         }
 
-        if (($status === null || $status >= 400) || isset($decoded['error'])) {
-            $reason = $decoded['error_description'] ?? $decoded['error'] ?? 'HTTP ' . ($status ?? 'unknown');
+        if ($status < 200 || $status >= 400 || isset($decoded['error'])) {
+            $reason = $decoded['error_description'] ?? $decoded['error'] ?? "HTTP {$status}";
             throw new SecurityException("Request to {$url} failed: {$reason}");
         }
 

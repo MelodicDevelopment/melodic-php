@@ -124,7 +124,12 @@ class OidcAuthProvider implements AuthProviderInterface
     {
         try {
             $jwks = $this->oidcProvider->getJwks();
-            $keys = JWK::parseKeySet($jwks);
+            // Pass a default algorithm: some providers (notably Microsoft Entra)
+            // omit the per-key "alg" in their JWKS, which parseKeySet otherwise
+            // rejects. Binding such keys to the configured alg also prevents
+            // algorithm-confusion — JWT::decode still checks the token header alg
+            // against the key.
+            $keys = JWK::parseKeySet($jwks, $this->config->signingAlg);
             $claims = (array) JWT::decode($token, $keys);
         } catch (\Exception $e) {
             throw new SecurityException('Invalid token: ' . $e->getMessage(), 0, $e);

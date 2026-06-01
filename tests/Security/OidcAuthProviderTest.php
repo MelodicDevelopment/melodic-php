@@ -46,6 +46,8 @@ class OidcAuthProviderTest extends TestCase
     private const KID = 'test-key';
 
     private string $privateKey;
+    private string $modulus;
+    private string $exponent;
     private OidcAuthProvider $provider;
 
     protected function setUp(): void
@@ -62,6 +64,8 @@ class OidcAuthProviderTest extends TestCase
         openssl_pkey_export($resource, $privateKey);
         $this->privateKey = $privateKey;
         $details = openssl_pkey_get_details($resource);
+        $this->modulus = $this->base64Url($details['rsa']['n']);
+        $this->exponent = $this->base64Url($details['rsa']['e']);
 
         $jwks = [
             'keys' => [[
@@ -69,8 +73,8 @@ class OidcAuthProviderTest extends TestCase
                 'use' => 'sig',
                 'alg' => 'RS256',
                 'kid' => self::KID,
-                'n' => $this->base64Url($details['rsa']['n']),
-                'e' => $this->base64Url($details['rsa']['e']),
+                'n' => $this->modulus,
+                'e' => $this->exponent,
             ]],
         ];
 
@@ -103,6 +107,41 @@ class OidcAuthProviderTest extends TestCase
     public function testValidTokenIsAccepted(): void
     {
         $claims = $this->provider->validateToken($this->token([
+            'iss' => self::ISSUER,
+            'aud' => self::CLIENT_ID,
+            'exp' => time() + 3600,
+            'sub' => 'user-1',
+        ]));
+
+        $this->assertSame('user-1', $claims['sub']);
+    }
+
+    public function testValidTokenIsAcceptedWhenJwkOmitsAlg(): void
+    {
+        // Microsoft Entra's JWKS omits the per-key "alg". parseKeySet rejects such
+        // keys unless a default algorithm is supplied — regression for the live
+        // "JWK must contain an alg parameter" failure.
+        $jwksWithoutAlg = [
+            'keys' => [[
+                'kty' => 'RSA',
+                'use' => 'sig',
+                'kid' => self::KID,
+                'n' => $this->modulus,
+                'e' => $this->exponent,
+            ]],
+        ];
+
+        $provider = new OidcAuthProvider(
+            new AuthProviderConfig(
+                name: 'test',
+                type: AuthProviderType::Oidc,
+                clientId: self::CLIENT_ID,
+            ),
+            sys_get_temp_dir() . '/unused',
+            new FakeOidcProvider($jwksWithoutAlg, self::ISSUER),
+        );
+
+        $claims = $provider->validateToken($this->token([
             'iss' => self::ISSUER,
             'aud' => self::CLIENT_ID,
             'exp' => time() + 3600,

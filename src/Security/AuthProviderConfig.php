@@ -19,6 +19,7 @@ class AuthProviderConfig
         public readonly string $redirectUri = '',
         public readonly string $audience = '',
         public readonly string $scopes = '',
+        public readonly string $signingAlg = 'RS256',
         /** @var array<string, string> */
         public readonly array $claimMap = [],
     ) {
@@ -40,6 +41,7 @@ class AuthProviderConfig
             redirectUri: (string) ($config['redirectUri'] ?? ''),
             audience: (string) ($config['audience'] ?? ''),
             scopes: (string) ($config['scopes'] ?? ''),
+            signingAlg: (string) ($config['signingAlg'] ?? 'RS256'),
             claimMap: (array) ($config['claimMap'] ?? []),
         );
     }

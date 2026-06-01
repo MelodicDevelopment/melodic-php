@@ -38,6 +38,10 @@ review. See [`MIGRATION-3.0.md`](MIGRATION-3.0.md) for upgrade steps.
 
 ### Fixed
 
+- **OIDC JWKS** are now parsed with a configurable default signing algorithm
+  (`RS256`), so providers that omit the per-key `alg` (notably **Microsoft
+  Entra**) validate instead of failing with "JWK must contain an alg parameter".
+  Verified end to end against a live Entra tenant.
 - **Validation** is nullable-by-default: optional fields with format rules no
   longer fail when omitted (only `#[Required]` rejects a missing value).
 - **HEAD** requests no longer emit a response body (RFC 9110).
@@ -56,7 +60,8 @@ review. See [`MIGRATION-3.0.md`](MIGRATION-3.0.md) for upgrade steps.
 ### Changed
 
 - New config keys: `auth.cookieSecure` / `cookieSameSite` / `cookiePath` /
-  `cookieDomain`, `auth.oidcCacheDir`, and `session.*` equivalents.
+  `cookieDomain`, `auth.oidcCacheDir`, `auth.providers.*.signingAlg` (default
+  `RS256`), and `session.*` equivalents.
 - CORS wildcard origins match multi-level subdomains.
 
 ### Tooling

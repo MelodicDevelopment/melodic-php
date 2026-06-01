@@ -638,4 +638,27 @@ class ValidatorTest extends TestCase
         $this->assertFalse($result->isValid);
         $this->assertArrayHasKey('name', $result->errors);
     }
+
+    /**
+     * Every value-format rule must pass on null (nullable-by-default), and still
+     * reject a present-but-invalid value. Exercises each rule's null branch.
+     */
+    public function testEveryFormatRulePassesOnNullButRejectsInvalid(): void
+    {
+        $cases = [
+            [new Email(), 'not-an-email'],
+            [new MaxLength(3), 'too long'],
+            [new MinLength(5), 'no'],
+            [new Pattern('/^\d+$/'), 'abc'],
+            [new Min(10), 5],
+            [new Max(10), 50],
+            [new In(['a', 'b']), 'z'],
+        ];
+
+        foreach ($cases as [$rule, $invalid]) {
+            $name = $rule::class;
+            $this->assertTrue($rule->validate(null), "{$name} should pass on null");
+            $this->assertFalse($rule->validate($invalid), "{$name} should reject an invalid value");
+        }
+    }
 }

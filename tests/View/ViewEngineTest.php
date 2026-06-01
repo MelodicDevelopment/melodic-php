@@ -144,4 +144,30 @@ class ViewEngineTest extends TestCase
 
         $this->assertSame('<p>&lt;b&gt;x&lt;/b&gt;</p>', $html);
     }
+
+    public function testNestedPartialRenderDoesNotCorruptParentSections(): void
+    {
+        // A partial that opens its own section, rendered from within the parent.
+        file_put_contents(
+            $this->viewsPath . '/partial.phtml',
+            '<?php $this->beginSection("inner") ?>INNER<?php $this->endSection() ?>PARTIAL'
+        );
+        // Parent defines an "outer" section, then renders the partial inline.
+        file_put_contents(
+            $this->viewsPath . '/parent.phtml',
+            '<?php $this->beginSection("outer") ?>OUTER<?php $this->endSection() ?>'
+            . '[<?= $this->render("partial") ?>]'
+        );
+        // Layout pulls the parent's "outer" section back out.
+        file_put_contents(
+            $this->viewsPath . '/mainlayout.phtml',
+            '<?= $this->renderBody() ?>|<?= $this->renderSection("outer") ?>'
+        );
+
+        $engine = new ViewEngine($this->viewsPath);
+        $html = $engine->render('parent', [], 'mainlayout');
+
+        // Parent's section survives the nested render; partial body is inlined.
+        $this->assertSame('[PARTIAL]|OUTER', $html);
+    }
 }

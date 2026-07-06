@@ -52,9 +52,10 @@ final class CorsMiddlewareTest extends TestCase
 
         $headers = $response->getHeaders();
         $this->assertSame('*', $headers['Access-Control-Allow-Origin']);
-        $this->assertSame('GET, POST, PUT, DELETE, PATCH, OPTIONS', $headers['Access-Control-Allow-Methods']);
-        $this->assertSame('Content-Type, Authorization', $headers['Access-Control-Allow-Headers']);
-        $this->assertSame('86400', $headers['Access-Control-Max-Age']);
+        // Preflight-only headers are not emitted on actual (non-OPTIONS) responses.
+        $this->assertArrayNotHasKey('Access-Control-Allow-Methods', $headers);
+        $this->assertArrayNotHasKey('Access-Control-Allow-Headers', $headers);
+        $this->assertArrayNotHasKey('Access-Control-Max-Age', $headers);
         $this->assertArrayNotHasKey('Vary', $headers);
     }
 
@@ -277,7 +278,8 @@ final class CorsMiddlewareTest extends TestCase
             'allowedHeaders' => ['X-Custom-Header'],
             'maxAge' => 3600,
         ]);
-        $request = $this->makeRequest(origin: 'https://example.com');
+        // Preflight request: the custom values must all surface there.
+        $request = $this->makeRequest('OPTIONS', '/', 'https://example.com');
         $handler = $this->makeHandler();
 
         $response = $middleware->process($request, $handler);
@@ -287,5 +289,22 @@ final class CorsMiddlewareTest extends TestCase
         $this->assertSame('GET, POST', $headers['Access-Control-Allow-Methods']);
         $this->assertSame('X-Custom-Header', $headers['Access-Control-Allow-Headers']);
         $this->assertSame('3600', $headers['Access-Control-Max-Age']);
+    }
+
+    public function testPreflightOnlyHeadersAreScopedToOptionsResponses(): void
+    {
+        $middleware = new CorsMiddleware(['allowedOrigins' => ['https://example.com']]);
+        $handler = $this->makeHandler();
+
+        $preflight = $middleware->process($this->makeRequest('OPTIONS', '/', 'https://example.com'), $handler);
+        $actual = $middleware->process($this->makeRequest('GET', '/', 'https://example.com'), $handler);
+
+        $this->assertArrayHasKey('Access-Control-Allow-Methods', $preflight->getHeaders());
+        $this->assertArrayHasKey('Access-Control-Max-Age', $preflight->getHeaders());
+
+        $this->assertSame('https://example.com', $actual->getHeaders()['Access-Control-Allow-Origin']);
+        $this->assertArrayNotHasKey('Access-Control-Allow-Methods', $actual->getHeaders());
+        $this->assertArrayNotHasKey('Access-Control-Allow-Headers', $actual->getHeaders());
+        $this->assertArrayNotHasKey('Access-Control-Max-Age', $actual->getHeaders());
     }
 }

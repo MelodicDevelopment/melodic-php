@@ -502,6 +502,18 @@ class DbContextTest extends TestCase
         $this->assertNull($typed->updatedAt);
     }
 
+    #[Test]
+    public function injectedPdoGetsExceptionErrModeAndAssocFetchMode(): void
+    {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_SILENT);
+
+        new DbContext($pdo);
+
+        $this->assertSame(PDO::ERRMODE_EXCEPTION, $pdo->getAttribute(PDO::ATTR_ERRMODE));
+        $this->assertSame(PDO::FETCH_ASSOC, $pdo->getAttribute(PDO::ATTR_DEFAULT_FETCH_MODE));
+    }
+
     private function insertUser(
         string $name,
         string $email,

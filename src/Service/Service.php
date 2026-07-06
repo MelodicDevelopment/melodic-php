@@ -14,11 +14,6 @@ class Service
     ) {
     }
 
-    public function __destruct()
-    {
-        // Cleanup/disposal hook — override in subclasses as needed.
-    }
-
     protected function getContext(): DbContextInterface
     {
         return $this->context;

@@ -25,9 +25,13 @@ class DbContext implements DbContextInterface
             $this->pdo = $dsn;
         } else {
             $this->pdo = new PDO($dsn, $username, $password, $options);
-            $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            $this->pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         }
+
+        // Applied to injected PDO instances too: DbContext's error handling
+        // (transaction rollback in particular) assumes ERRMODE_EXCEPTION, and
+        // hydration assumes associative rows.
+        $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     }
 
     /** @param array<string, mixed> $params */

@@ -60,7 +60,10 @@ class Console
         echo "Available commands:" . PHP_EOL;
 
         foreach ($this->commands as $name => $command) {
-            echo "  {$name}" . str_repeat(' ', max(1, 24 - strlen($name))) . $command->getDescription() . PHP_EOL;
+            // Align on character count, not byte count, so multibyte command
+            // names don't skew the description column (mbstring is optional).
+            $nameLength = function_exists('mb_strlen') ? mb_strlen($name) : strlen($name);
+            echo "  {$name}" . str_repeat(' ', max(1, 24 - $nameLength)) . $command->getDescription() . PHP_EOL;
         }
     }
 }

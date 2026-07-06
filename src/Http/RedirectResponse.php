@@ -28,7 +28,7 @@ class RedirectResponse extends Response
      *
      * @throws \InvalidArgumentException When $path is not a local path.
      */
-    public static function local(string $path, int $statusCode = 302): static
+    public static function local(string $path, int $statusCode = 302): self
     {
         if (!self::isLocalPath($path)) {
             throw new \InvalidArgumentException(
@@ -36,7 +36,7 @@ class RedirectResponse extends Response
             );
         }
 
-        return new static($path, $statusCode);
+        return new self($path, $statusCode);
     }
 
     /**

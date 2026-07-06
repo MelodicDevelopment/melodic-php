@@ -14,6 +14,30 @@ class EventDispatcher implements EventDispatcherInterface
         $this->listeners[$eventClass][$priority][] = $listener;
     }
 
+    /**
+     * Remove a previously registered listener (compared by identity). Useful
+     * for test isolation and dynamically scoped subscriptions. Removing a
+     * listener that was never registered is a no-op.
+     */
+    public function removeListener(string $eventClass, callable $listener): void
+    {
+        foreach ($this->listeners[$eventClass] ?? [] as $priority => $listeners) {
+            foreach ($listeners as $index => $registered) {
+                if ($registered === $listener) {
+                    unset($this->listeners[$eventClass][$priority][$index]);
+                }
+            }
+
+            if ($this->listeners[$eventClass][$priority] === []) {
+                unset($this->listeners[$eventClass][$priority]);
+            }
+        }
+
+        if (($this->listeners[$eventClass] ?? null) === []) {
+            unset($this->listeners[$eventClass]);
+        }
+    }
+
     public function dispatch(object $event): object
     {
         $eventClass = $event::class;

@@ -17,6 +17,8 @@ class Container implements ContainerInterface
     private array $instances = [];
     /** @var array<string, bool> */
     private array $resolving = [];
+    /** @var array<class-string, ReflectionClass<object>> Reflection cache — resolve() runs per request for every unbound class. */
+    private array $reflectors = [];
 
     public function get(string $id): mixed
     {
@@ -117,7 +119,7 @@ class Container implements ContainerInterface
         $this->resolving[$class] = true;
 
         try {
-            $reflector = new ReflectionClass($class);
+            $reflector = $this->reflectors[$class] ??= new ReflectionClass($class);
 
             if (!$reflector->isInstantiable()) {
                 throw new ContainerException(

@@ -10,13 +10,26 @@ use ReflectionProperty;
 
 class Model implements \JsonSerializable
 {
+    /** @var array<class-string, ReflectionClass<object>> Per-class reflection cache — binding and serialization are hot paths. */
+    private static array $reflectors = [];
+
     /** @var array<string, true> Resolved property names that were sourced from fromArray input. */
     private array $_providedKeys = [];
+
+    /**
+     * @param class-string $class
+     * @return ReflectionClass<object>
+     */
+    private static function reflector(string $class): ReflectionClass
+    {
+        return self::$reflectors[$class] ??= new ReflectionClass($class);
+    }
 
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): static
     {
-        $reflector = new ReflectionClass(static::class);
+        $reflector = self::reflector(static::class);
+        /** @var static $instance */
         $instance = $reflector->newInstanceWithoutConstructor();
 
         foreach ($data as $key => $value) {
@@ -213,7 +226,7 @@ class Model implements \JsonSerializable
     /** @return array<string, mixed> */
     public function toArray(): array
     {
-        $reflector = new ReflectionClass($this);
+        $reflector = self::reflector(static::class);
         $properties = $reflector->getProperties(ReflectionProperty::IS_PUBLIC);
         $result = [];
 
@@ -238,7 +251,7 @@ class Model implements \JsonSerializable
      */
     public function toPascalArray(): array
     {
-        $reflector = new ReflectionClass($this);
+        $reflector = self::reflector(static::class);
         $properties = $reflector->getProperties(ReflectionProperty::IS_PUBLIC);
         $result = [];
 
@@ -264,7 +277,7 @@ class Model implements \JsonSerializable
      */
     public function toUpdateArray(): array
     {
-        $reflector = new ReflectionClass($this);
+        $reflector = self::reflector(static::class);
         $result = [];
 
         foreach (array_keys($this->_providedKeys) as $propertyName) {

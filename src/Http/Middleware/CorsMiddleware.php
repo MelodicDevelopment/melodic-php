@@ -32,15 +32,15 @@ class CorsMiddleware implements MiddlewareInterface
     public function process(Request $request, RequestHandlerInterface $handler): Response
     {
         if ($request->method() === HttpMethod::OPTIONS) {
-            return $this->addCorsHeaders(new Response(204), $request);
+            return $this->addCorsHeaders(new Response(204), $request, preflight: true);
         }
 
         $response = $handler->handle($request);
 
-        return $this->addCorsHeaders($response, $request);
+        return $this->addCorsHeaders($response, $request, preflight: false);
     }
 
-    private function addCorsHeaders(Response $response, Request $request): Response
+    private function addCorsHeaders(Response $response, Request $request, bool $preflight): Response
     {
         $origin = $request->header('Origin');
         $matchedOrigin = $this->resolveOrigin($origin);
@@ -49,11 +49,17 @@ class CorsMiddleware implements MiddlewareInterface
             return $response;
         }
 
-        $response = $response
-            ->withHeader('Access-Control-Allow-Origin', $matchedOrigin)
-            ->withHeader('Access-Control-Allow-Methods', implode(', ', $this->allowedMethods))
-            ->withHeader('Access-Control-Allow-Headers', implode(', ', $this->allowedHeaders))
-            ->withHeader('Access-Control-Max-Age', (string) $this->maxAge);
+        $response = $response->withHeader('Access-Control-Allow-Origin', $matchedOrigin);
+
+        // Allow-Methods / Allow-Headers / Max-Age only have meaning on a
+        // preflight response — browsers ignore them on actual responses, so
+        // emitting them there is just header noise.
+        if ($preflight) {
+            $response = $response
+                ->withHeader('Access-Control-Allow-Methods', implode(', ', $this->allowedMethods))
+                ->withHeader('Access-Control-Allow-Headers', implode(', ', $this->allowedHeaders))
+                ->withHeader('Access-Control-Max-Age', (string) $this->maxAge);
+        }
 
         if ($matchedOrigin !== '*') {
             $response = $response->withHeader('Vary', 'Origin');

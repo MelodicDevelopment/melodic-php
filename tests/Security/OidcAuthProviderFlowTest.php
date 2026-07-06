@@ -81,6 +81,29 @@ class ArraySessionManager extends SessionManager
     }
 }
 
+/**
+ * OidcAuthProvider with the network token-exchange stubbed out so the callback
+ * path can run end-to-end: nonce verification, id_token requirement, claims.
+ */
+class StubExchangeOidcAuthProvider extends OidcAuthProvider
+{
+    /** @var array<string, mixed> */
+    public array $tokenResponse = [];
+
+    /** @var array<string, mixed> */
+    public array $tokenClaims = [];
+
+    protected function exchangeCode(string $code, string $codeVerifier): array
+    {
+        return $this->tokenResponse;
+    }
+
+    public function validateToken(string $token): array
+    {
+        return $this->tokenClaims;
+    }
+}
+
 class OidcAuthProviderFlowTest extends TestCase
 {
     private const PROVIDER = 'test';
@@ -233,5 +256,108 @@ class OidcAuthProviderFlowTest extends TestCase
         // callback fails, so a replayed callback cannot reuse them.
         $this->assertFalse($this->session->has('melodic_oauth_state_test'));
         $this->assertFalse($this->session->has('melodic_oauth_verifier_test'));
+        $this->assertFalse($this->session->has('melodic_oauth_nonce_test'));
+    }
+
+    public function testLoginStoresAndSendsNonce(): void
+    {
+        $request = new Request(
+            server: ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/auth/login/test'],
+        );
+
+        $response = $this->provider->handleLogin($request, $this->session);
+
+        $nonce = $this->session->get('melodic_oauth_nonce_test');
+        $this->assertIsString($nonce);
+        $this->assertNotSame('', $nonce);
+
+        parse_str((string) parse_url($response->getHeaders()['Location'], PHP_URL_QUERY), $params);
+        $this->assertSame($nonce, $params['nonce']);
+    }
+
+    private function stubbedProvider(): StubExchangeOidcAuthProvider
+    {
+        return new StubExchangeOidcAuthProvider(
+            new AuthProviderConfig(
+                name: self::PROVIDER,
+                type: AuthProviderType::Oidc,
+                clientId: self::CLIENT_ID,
+                redirectUri: self::REDIRECT,
+            ),
+            sys_get_temp_dir() . '/unused',
+            new FakeEndpointsOidcProvider(),
+        );
+    }
+
+    /** Prime the session as a real handleLogin would. */
+    private function primeSession(string $state, string $nonce): void
+    {
+        $this->session->set('melodic_oauth_state_test', $state);
+        $this->session->set('melodic_oauth_verifier_test', 'the-verifier');
+        $this->session->set('melodic_oauth_nonce_test', $nonce);
+    }
+
+    public function testCallbackRejectsResponseWithoutIdToken(): void
+    {
+        $provider = $this->stubbedProvider();
+        $provider->tokenResponse = ['access_token' => 'opaque-access-token'];
+        $this->primeSession('the-state', 'the-nonce');
+
+        $this->expectException(SecurityException::class);
+        $this->expectExceptionMessage('No id_token');
+
+        $provider->handleCallback(
+            $this->callbackRequest(['code' => 'auth-code', 'state' => 'the-state']),
+            $this->session,
+        );
+    }
+
+    public function testCallbackRejectsIdTokenWithWrongNonce(): void
+    {
+        $provider = $this->stubbedProvider();
+        $provider->tokenResponse = ['id_token' => 'jwt'];
+        $provider->tokenClaims = ['sub' => 'user-1', 'nonce' => 'replayed-nonce'];
+        $this->primeSession('the-state', 'the-nonce');
+
+        $this->expectException(SecurityException::class);
+        $this->expectExceptionMessage('nonce');
+
+        $provider->handleCallback(
+            $this->callbackRequest(['code' => 'auth-code', 'state' => 'the-state']),
+            $this->session,
+        );
+    }
+
+    public function testCallbackRejectsIdTokenWithoutNonce(): void
+    {
+        $provider = $this->stubbedProvider();
+        $provider->tokenResponse = ['id_token' => 'jwt'];
+        $provider->tokenClaims = ['sub' => 'user-1'];
+        $this->primeSession('the-state', 'the-nonce');
+
+        $this->expectException(SecurityException::class);
+        $this->expectExceptionMessage('nonce');
+
+        $provider->handleCallback(
+            $this->callbackRequest(['code' => 'auth-code', 'state' => 'the-state']),
+            $this->session,
+        );
+    }
+
+    public function testCallbackSucceedsWithMatchingNonce(): void
+    {
+        $provider = $this->stubbedProvider();
+        $provider->tokenResponse = ['id_token' => 'jwt'];
+        $provider->tokenClaims = ['sub' => 'user-1', 'nonce' => 'the-nonce'];
+        $this->primeSession('the-state', 'the-nonce');
+
+        $result = $provider->handleCallback(
+            $this->callbackRequest(['code' => 'auth-code', 'state' => 'the-state']),
+            $this->session,
+        );
+
+        $this->assertSame('jwt', $result->token);
+        $this->assertSame('user-1', $result->claims['sub']);
+        $this->assertSame('test', $result->claims['provider']);
     }
 }

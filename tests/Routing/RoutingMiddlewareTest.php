@@ -80,6 +80,22 @@ class StubController extends Controller
     {
         return $this->json(['action' => 'withDefault', 'format' => $format]);
     }
+
+    public function showTyped(int $id): JsonResponse
+    {
+        return $this->json(['action' => 'showTyped', 'id' => $id]);
+    }
+
+    public function showStatus(StubRouteStatus $status): JsonResponse
+    {
+        return $this->json(['action' => 'showStatus', 'status' => $status->value]);
+    }
+}
+
+enum StubRouteStatus: string
+{
+    case Active = 'active';
+    case Archived = 'archived';
 }
 
 class StubFallbackHandler implements RequestHandlerInterface
@@ -406,5 +422,67 @@ final class RoutingMiddlewareTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
         $data = json_decode($response->getBody(), true);
         $this->assertSame('service-ok', $data['label']);
+    }
+
+    // -------------------------------------------------------
+    // Route param coercion
+    // -------------------------------------------------------
+
+    public function testIntTypedRouteParamIsCoerced(): void
+    {
+        $this->router->get('/typed/{id}', StubController::class, 'showTyped');
+        $middleware = $this->createMiddleware();
+
+        $response = $middleware->process($this->createRequest('GET', '/typed/42'), $this->fallbackHandler);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $data = json_decode($response->getBody(), true);
+        $this->assertSame(42, $data['id']);
+    }
+
+    public function testNonNumericValueForIntRouteParamReturns400(): void
+    {
+        $this->router->get('/typed/{id}', StubController::class, 'showTyped');
+        $middleware = $this->createMiddleware();
+
+        $response = $middleware->process($this->createRequest('GET', '/typed/abc'), $this->fallbackHandler);
+
+        $this->assertSame(400, $response->getStatusCode());
+        $data = json_decode($response->getBody(), true);
+        $this->assertArrayHasKey('id', $data);
+    }
+
+    public function testStringTypedRouteParamIsUntouched(): void
+    {
+        $this->router->get('/items/{id}', StubController::class, 'show');
+        $middleware = $this->createMiddleware();
+
+        $response = $middleware->process($this->createRequest('GET', '/items/abc-123'), $this->fallbackHandler);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $data = json_decode($response->getBody(), true);
+        $this->assertSame('abc-123', $data['id']);
+    }
+
+    public function testEnumTypedRouteParamIsCoerced(): void
+    {
+        $this->router->get('/status/{status}', StubController::class, 'showStatus');
+        $middleware = $this->createMiddleware();
+
+        $response = $middleware->process($this->createRequest('GET', '/status/active'), $this->fallbackHandler);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $data = json_decode($response->getBody(), true);
+        $this->assertSame('active', $data['status']);
+    }
+
+    public function testInvalidEnumRouteParamReturns400(): void
+    {
+        $this->router->get('/status/{status}', StubController::class, 'showStatus');
+        $middleware = $this->createMiddleware();
+
+        $response = $middleware->process($this->createRequest('GET', '/status/bogus'), $this->fallbackHandler);
+
+        $this->assertSame(400, $response->getStatusCode());
     }
 }

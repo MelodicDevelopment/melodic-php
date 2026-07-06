@@ -22,6 +22,11 @@ class MakeEntityCommand extends Command
             return 1;
         }
 
+        if (!Stub::isValidIdentifier($name)) {
+            $this->error("Invalid entity name '{$name}': use letters and digits only (e.g. BlogPost).");
+            return 1;
+        }
+
         $entity = Stub::pascalCase($name);
         $plural = Stub::pluralize($entity);
         $table = Stub::snakeCase($plural);
@@ -34,7 +39,13 @@ class MakeEntityCommand extends Command
             return 1;
         }
 
-        $composer = json_decode(file_get_contents($composerPath), true);
+        $composer = json_decode((string) file_get_contents($composerPath), true);
+
+        if (!is_array($composer)) {
+            $this->error('Unable to parse composer.json.');
+            return 1;
+        }
+
         $psr4 = $composer['autoload']['psr-4'] ?? [];
 
         if (empty($psr4)) {

@@ -63,6 +63,22 @@ class NativeSession implements SessionInterface
     public function destroy(): void
     {
         if ($this->isStarted()) {
+            // Expire the browser's session cookie too — destroying only the
+            // server-side state leaves the old id in the browser, and the next
+            // start() would adopt it again (fixation via id reuse). Cookie
+            // attributes must match the ones it was set with or the browser
+            // keeps the original cookie.
+            if (!headers_sent()) {
+                setcookie(session_name(), '', [
+                    'expires' => time() - 3600,
+                    'path' => $this->cookiePath,
+                    'domain' => $this->cookieDomain,
+                    'secure' => $this->cookieSecure,
+                    'httponly' => true,
+                    'samesite' => $this->cookieSameSite,
+                ]);
+            }
+
             session_destroy();
             $_SESSION = [];
         }

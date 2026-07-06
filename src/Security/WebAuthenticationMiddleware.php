@@ -41,7 +41,13 @@ class WebAuthenticationMiddleware implements MiddlewareInterface
             }
         }
 
-        $this->session->set('melodic_redirect_after_login', $request->path());
+        // Only remember local paths as the post-login target — a crafted path
+        // like "/\evil.com" would otherwise bounce the user off-site after login.
+        $path = $request->path();
+
+        if (SafeRedirect::isSafePath($path)) {
+            $this->session->set('melodic_redirect_after_login', $path);
+        }
 
         return new RedirectResponse($this->config->loginPath);
     }

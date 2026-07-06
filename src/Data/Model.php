@@ -10,13 +10,26 @@ use ReflectionProperty;
 
 class Model implements \JsonSerializable
 {
+    /** @var array<class-string, ReflectionClass<object>> Per-class reflection cache — binding and serialization are hot paths. */
+    private static array $reflectors = [];
+
     /** @var array<string, true> Resolved property names that were sourced from fromArray input. */
     private array $_providedKeys = [];
+
+    /**
+     * @param class-string $class
+     * @return ReflectionClass<object>
+     */
+    private static function reflector(string $class): ReflectionClass
+    {
+        return self::$reflectors[$class] ??= new ReflectionClass($class);
+    }
 
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): static
     {
-        $reflector = new ReflectionClass(static::class);
+        $reflector = self::reflector(static::class);
+        /** @var static $instance */
         $instance = $reflector->newInstanceWithoutConstructor();
 
         foreach ($data as $key => $value) {
@@ -31,6 +44,13 @@ class Model implements \JsonSerializable
 
             if ($propertyName !== null) {
                 $property = $reflector->getProperty($propertyName);
+
+                // #[Guarded] properties never bind from wire input (mass-
+                // assignment defense); they can only be set programmatically.
+                if ($property->getAttributes(Guarded::class) !== []) {
+                    continue;
+                }
+
                 $property->setValue($instance, self::coerceValue($property, $value, $key));
                 $instance->_providedKeys[$propertyName] = true;
             }
@@ -69,9 +89,11 @@ class Model implements \JsonSerializable
             throw new ModelBindingException($field, "Field '{$field}' may not be null.");
         }
 
-        // Non-builtin types (nested models, enums, DateTime, ...) are left as-is.
+        // Non-builtin types: backed enums and DateTime are coerced from wire
+        // scalars (bad input → 400); other classes (nested models, ...) pass
+        // through untouched.
         if (!$type->isBuiltin()) {
-            return $value;
+            return self::toObject($type->getName(), $value, $field);
         }
 
         return match ($type->getName()) {
@@ -81,6 +103,56 @@ class Model implements \JsonSerializable
             'string' => self::toString($value, $field),
             default => $value, // array, object, mixed, iterable — no coercion
         };
+    }
+
+    private static function toObject(string $class, mixed $value, string $field): mixed
+    {
+        if ($value instanceof $class) {
+            return $value;
+        }
+
+        if (is_subclass_of($class, \BackedEnum::class)) {
+            return self::toEnum($class, $value, $field);
+        }
+
+        if (in_array($class, [\DateTimeImmutable::class, \DateTimeInterface::class, \DateTime::class], true)) {
+            return self::toDateTime($class, $value, $field);
+        }
+
+        return $value;
+    }
+
+    /** @param class-string<\BackedEnum> $class */
+    private static function toEnum(string $class, mixed $value, string $field): \BackedEnum
+    {
+        $backingType = (string) (new \ReflectionEnum($class))->getBackingType();
+
+        if ($backingType === 'int' && is_string($value) && preg_match('/^-?\d+$/', $value) === 1) {
+            $value = (int) $value;
+        }
+
+        $case = ($backingType === 'int' && is_int($value)) || ($backingType === 'string' && is_string($value))
+            ? $class::tryFrom($value)
+            : null;
+
+        if ($case === null) {
+            throw new ModelBindingException($field, "Field '{$field}' is not one of the allowed values.");
+        }
+
+        return $case;
+    }
+
+    private static function toDateTime(string $class, mixed $value, string $field): \DateTimeInterface
+    {
+        if (!is_string($value) || trim($value) === '') {
+            throw new ModelBindingException($field, "Field '{$field}' must be a date/time string.");
+        }
+
+        try {
+            return $class === \DateTime::class ? new \DateTime($value) : new \DateTimeImmutable($value);
+        } catch (\Exception) {
+            throw new ModelBindingException($field, "Field '{$field}' must be a valid date/time.");
+        }
     }
 
     private static function toInt(mixed $value, string $field): int
@@ -154,7 +226,7 @@ class Model implements \JsonSerializable
     /** @return array<string, mixed> */
     public function toArray(): array
     {
-        $reflector = new ReflectionClass($this);
+        $reflector = self::reflector(static::class);
         $properties = $reflector->getProperties(ReflectionProperty::IS_PUBLIC);
         $result = [];
 
@@ -179,7 +251,7 @@ class Model implements \JsonSerializable
      */
     public function toPascalArray(): array
     {
-        $reflector = new ReflectionClass($this);
+        $reflector = self::reflector(static::class);
         $properties = $reflector->getProperties(ReflectionProperty::IS_PUBLIC);
         $result = [];
 
@@ -205,7 +277,7 @@ class Model implements \JsonSerializable
      */
     public function toUpdateArray(): array
     {
-        $reflector = new ReflectionClass($this);
+        $reflector = self::reflector(static::class);
         $result = [];
 
         foreach (array_keys($this->_providedKeys) as $propertyName) {

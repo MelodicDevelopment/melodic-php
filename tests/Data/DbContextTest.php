@@ -20,6 +20,27 @@ class TestUser
     public ?string $bio;
 }
 
+enum UserRole: string
+{
+    case Admin = 'admin';
+    case Member = 'member';
+}
+
+enum UserLevel: int
+{
+    case Basic = 1;
+    case Premium = 2;
+}
+
+class TypedUser
+{
+    public int $id;
+    public UserRole $role;
+    public UserLevel $level;
+    public \DateTimeImmutable $createdAt;
+    public ?\DateTime $updatedAt;
+}
+
 class DbContextTest extends TestCase
 {
     private DbContext $db;
@@ -451,6 +472,46 @@ class DbContextTest extends TestCase
             "SELECT id, name, email, score, 'true' AS active, bio FROM users",
         );
         $this->assertTrue($true->active);
+    }
+
+    #[Test]
+    public function hydratesBackedEnumAndDateTimeColumns(): void
+    {
+        $typed = $this->db->queryFirst(
+            TypedUser::class,
+            "SELECT 1 AS id, 'admin' AS role, 2 AS level,
+                    '2026-01-15 10:30:00' AS createdAt, '2026-02-01 08:00:00' AS updatedAt",
+        );
+
+        $this->assertSame(UserRole::Admin, $typed->role);
+        $this->assertSame(UserLevel::Premium, $typed->level);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $typed->createdAt);
+        $this->assertSame('2026-01-15 10:30:00', $typed->createdAt->format('Y-m-d H:i:s'));
+        $this->assertInstanceOf(\DateTime::class, $typed->updatedAt);
+    }
+
+    #[Test]
+    public function hydratesIntBackedEnumFromStringColumn(): void
+    {
+        $typed = $this->db->queryFirst(
+            TypedUser::class,
+            "SELECT 1 AS id, 'member' AS role, '1' AS level, '2026-01-15 10:30:00' AS createdAt, NULL AS updatedAt",
+        );
+
+        $this->assertSame(UserLevel::Basic, $typed->level);
+        $this->assertNull($typed->updatedAt);
+    }
+
+    #[Test]
+    public function injectedPdoGetsExceptionErrModeAndAssocFetchMode(): void
+    {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_SILENT);
+
+        new DbContext($pdo);
+
+        $this->assertSame(PDO::ERRMODE_EXCEPTION, $pdo->getAttribute(PDO::ATTR_ERRMODE));
+        $this->assertSame(PDO::FETCH_ASSOC, $pdo->getAttribute(PDO::ATTR_DEFAULT_FETCH_MODE));
     }
 
     private function insertUser(

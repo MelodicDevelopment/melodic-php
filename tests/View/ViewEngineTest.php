@@ -170,4 +170,26 @@ class ViewEngineTest extends TestCase
         // Parent's section survives the nested render; partial body is inlined.
         $this->assertSame('[PARTIAL]|OUTER', $html);
     }
+
+    public function testExceptionMidSectionRestoresOutputBufferLevel(): void
+    {
+        file_put_contents(
+            $this->viewsPath . '/exploding.phtml',
+            '<?php $this->beginSection("scripts"); throw new RuntimeException("boom");'
+        );
+
+        $engine = new ViewEngine($this->viewsPath);
+        $level = ob_get_level();
+
+        try {
+            $engine->render('exploding');
+            $this->fail('Expected RuntimeException');
+        } catch (RuntimeException $e) {
+            $this->assertSame('boom', $e->getMessage());
+        }
+
+        // The template buffer AND the un-ended section buffer must both be
+        // closed, or every failed render leaks an output buffer level.
+        $this->assertSame($level, ob_get_level());
+    }
 }

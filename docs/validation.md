@@ -36,7 +36,7 @@ class CreateUserDto
 
 | Attribute | Parameters | Description |
 |---|---|---|
-| `#[Required]` | — | Not null and not empty string |
+| `#[Required]` | — | Not null, not empty/whitespace string, not empty array |
 | `#[Email]` | — | Valid email via `filter_var` |
 | `#[MinLength(n)]` | `int $min` | String length >= n |
 | `#[MaxLength(n)]` | `int $max` | String length <= n |
@@ -51,6 +51,14 @@ All rules accept an optional `message` parameter to override the default error m
 #[Required(message: 'Username cannot be blank')]
 #[MinLength(3, message: 'Username must be at least 3 characters')]
 ```
+
+### `#[In]` comparison semantics
+
+`#[In]` compares strictly (`===`). Model binding coerces wire input to the
+property's declared type *before* validation runs, so `#[In([1, 2])]` on an
+`int` property accepts `"1"` from a client. On an untyped/`mixed` property no
+coercion happens — `"1" !== 1` — so type the property or list values of the
+matching type.
 
 ## Validating Objects
 
@@ -177,10 +185,46 @@ If the request body fails validation, the framework returns a `400` response lik
 
 **How it works:**
 - The `RoutingMiddleware` uses `ReflectionMethod` to inspect action parameters
-- Route params (strings from the URL like `$id`) are matched by name first
+- Route params (strings from the URL like `$id`) are matched by name first and
+  coerced to the parameter's declared type — `show(int $id)` receives an `int`,
+  and a non-numeric URL value returns a `400` instead of a type error. Backed
+  enum parameters work too (`show(Status $status)`)
 - Parameters typed as a concrete `Model` subclass are hydrated via `Model::fromArray($request->body())`
 - The hydrated model is validated using the `Validator` (resolved from the DI container)
 - If validation fails, the controller action is never called
+
+## Mass Assignment
+
+`Model::fromArray()` binds **every matching public property** from the input,
+and `toUpdateArray()` carries every provided field into your UPDATE statement.
+If you reuse a full entity DTO as a request body, a client can over-post
+fields you never intended to accept (`role`, `isActive`, ...).
+
+Two defenses, in order of preference:
+
+1. **One input DTO per endpoint.** Define a dedicated request model per
+   endpoint (`CreateUserRequest`, `UpdateUserProfileRequest`) containing only
+   the fields that endpoint accepts. Never reuse a persistence/entity model as
+   an action parameter.
+2. **`#[Guarded]`** as defense in depth. A guarded property is never bound
+   from `fromArray()` input and never appears in `toUpdateArray()`; it can
+   only be set programmatically:
+
+```php
+use Melodic\Data\Guarded;
+use Melodic\Data\Model;
+
+class UserModel extends Model
+{
+    public string $username;
+
+    #[Guarded]
+    public string $role = 'user';   // wire input silently ignored
+
+    #[Guarded]
+    public bool $isActive = true;
+}
+```
 
 ## Manual Validation in a Controller
 

@@ -79,7 +79,11 @@ class FileLogger implements LoggerInterface
     {
         $timestamp = date('Y-m-d H:i:s');
         $levelName = strtoupper($level->value);
-        $interpolated = $this->interpolate($message, $context);
+        // Sanitize the whole interpolated line, not just context values —
+        // attacker data embedded directly in the message string must not be
+        // able to forge extra log lines either. The exception block below
+        // formats its own (intentional) multi-line output.
+        $interpolated = $this->sanitize($this->interpolate($message, $context));
 
         $entry = "[{$timestamp}] {$levelName}: {$interpolated}";
 
@@ -125,14 +129,30 @@ class FileLogger implements LoggerInterface
     private function write(string $entry): void
     {
         try {
-            if (!is_dir($this->logDirectory)) {
-                mkdir($this->logDirectory, 0755, true);
+            // Logs routinely carry internal detail (paths, exception traces),
+            // so keep them out of reach of other local users: 0750 directory,
+            // 0640 files. Failures are checked via return values — mkdir and
+            // file_put_contents emit warnings, not exceptions, so the
+            // try/catch alone would not notice them.
+            if (
+                !is_dir($this->logDirectory)
+                && !@mkdir($this->logDirectory, 0750, true)
+                && !is_dir($this->logDirectory)
+            ) {
+                return;
             }
 
             $filename = 'melodic-' . date('Y-m-d') . '.log';
             $path = $this->logDirectory . '/' . $filename;
+            $isNewFile = !file_exists($path);
 
-            file_put_contents($path, $entry, FILE_APPEND | LOCK_EX);
+            if (@file_put_contents($path, $entry, FILE_APPEND | LOCK_EX) === false) {
+                return;
+            }
+
+            if ($isNewFile) {
+                @chmod($path, 0640);
+            }
         } catch (\Throwable) {
             // Logger must never crash the app
         }

@@ -40,7 +40,13 @@ class Response
         return $response;
     }
 
-    /** @param array<string, mixed> $options */
+    /**
+     * Queue a cookie on the response. Secure defaults on (Secure + HttpOnly +
+     * SameSite=Lax); pass `'secure' => false` explicitly for plain-HTTP local
+     * development.
+     *
+     * @param array<string, mixed> $options
+     */
     public function withCookie(string $name, string $value, array $options = []): static
     {
         $response = clone $this;
@@ -49,7 +55,7 @@ class Response
             'expires' => $options['expires'] ?? 0,
             'path' => $options['path'] ?? '/',
             'domain' => $options['domain'] ?? '',
-            'secure' => $options['secure'] ?? false,
+            'secure' => $options['secure'] ?? true,
             'httponly' => $options['httponly'] ?? true,
             'samesite' => $options['samesite'] ?? 'Lax',
         ];

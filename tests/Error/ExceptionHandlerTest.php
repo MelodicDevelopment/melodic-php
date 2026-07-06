@@ -67,6 +67,15 @@ class ExceptionHandlerTest extends TestCase
         $this->assertInstanceOf(JsonResponse::class, $response);
     }
 
+    public function testApiPrefixRequiresSegmentBoundary(): void
+    {
+        $request = $this->makeRequest(uri: '/apiary/hives');
+
+        $response = $this->handler->handle(new \RuntimeException('fail'), $request);
+
+        $this->assertNotInstanceOf(JsonResponse::class, $response);
+    }
+
     public function testReturnsHtmlForNonApiNonJsonRequest(): void
     {
         $request = $this->makeRequest(uri: '/home');
@@ -243,6 +252,29 @@ class ExceptionHandlerTest extends TestCase
 
         $this->assertSame(404, $response->getStatusCode());
         $this->assertSame('Resource missing', $data['error']);
+    }
+
+    public function testSecurityExceptionMessageMaskedInProductionMode(): void
+    {
+        $this->handler->setDebug(false);
+        $request = $this->makeRequest(headers: ['Accept' => 'application/json']);
+
+        $response = $this->handler->handle(new SecurityException('Token audience mismatch: expected abc'), $request);
+        $data = json_decode($response->getBody(), true);
+
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertSame('Authentication failed.', $data['error']);
+    }
+
+    public function testSecurityExceptionMessageShownInDebugMode(): void
+    {
+        $this->handler->setDebug(true);
+        $request = $this->makeRequest(headers: ['Accept' => 'application/json']);
+
+        $response = $this->handler->handle(new SecurityException('Token audience mismatch: expected abc'), $request);
+        $data = json_decode($response->getBody(), true);
+
+        $this->assertSame('Token audience mismatch: expected abc', $data['error']);
     }
 
     public function testHtmlStatusCodeIsCorrectForHttpException(): void

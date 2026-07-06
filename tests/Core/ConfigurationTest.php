@@ -270,4 +270,49 @@ class ConfigurationTest extends TestCase
         $this->assertSame('this', $config->get('keep'));
         $this->assertSame('value', $config->get('new'));
     }
+
+    public function testMergeReplacesListsWholesale(): void
+    {
+        $config = new Configuration([
+            'cors' => ['allowedOrigins' => ['https://a.example.com', 'https://b.example.com']],
+        ]);
+
+        $config->merge([
+            'cors' => ['allowedOrigins' => ['https://qa.example.com']],
+        ]);
+
+        // A shorter override list must not inherit trailing base elements —
+        // [qa, b] here would leak origin b into the QA environment.
+        $this->assertSame(['https://qa.example.com'], $config->get('cors.allowedOrigins'));
+    }
+
+    public function testMergeReplacesListWithEmptyList(): void
+    {
+        $config = new Configuration(['cors' => ['allowedOrigins' => ['https://a.example.com']]]);
+
+        $config->merge(['cors' => ['allowedOrigins' => []]]);
+
+        $this->assertSame([], $config->get('cors.allowedOrigins'));
+    }
+
+    public function testMergeEmptyArrayDoesNotClobberMap(): void
+    {
+        $config = new Configuration(['app' => ['name' => 'Test', 'debug' => false]]);
+
+        // Decoded JSON cannot distinguish {} from [] — an empty override
+        // must leave the existing map untouched.
+        $config->merge(['app' => []]);
+
+        $this->assertSame('Test', $config->get('app.name'));
+        $this->assertFalse($config->get('app.debug'));
+    }
+
+    public function testMergeReplacesListsOfMapsWholesale(): void
+    {
+        $config = new Configuration(['providers' => [['name' => 'a'], ['name' => 'b']]]);
+
+        $config->merge(['providers' => [['name' => 'c']]]);
+
+        $this->assertSame([['name' => 'c']], $config->get('providers'));
+    }
 }

@@ -129,4 +129,29 @@ final class AuthorizationMiddlewareTest extends TestCase
 
         $this->assertSame(403, $response->getStatusCode());
     }
+
+    public function testAnonymousRequestNeverSatisfiesEntitlements(): void
+    {
+        // requireAuthentication=false must not disable the entitlement check:
+        // an anonymous request can never hold an entitlement.
+        $middleware = new AuthorizationMiddleware(['admin'], requireAuthentication: false);
+        $request = $this->createRequest();
+        $handler = $this->createHandler();
+
+        $response = $middleware->process($request, $handler);
+
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertFalse($handler->handled);
+    }
+
+    public function testAnonymousContextNeverSatisfiesEntitlements(): void
+    {
+        $middleware = new AuthorizationMiddleware(['admin'], requireAuthentication: false);
+        $request = $this->createRequest(UserContext::anonymous());
+        $handler = $this->createHandler();
+
+        $response = $middleware->process($request, $handler);
+
+        $this->assertSame(401, $response->getStatusCode());
+    }
 }

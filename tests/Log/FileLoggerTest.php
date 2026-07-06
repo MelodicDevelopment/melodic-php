@@ -179,6 +179,35 @@ final class FileLoggerTest extends TestCase
         $this->assertFileExists($expectedFile);
     }
 
+    public function testLogDirectoryAndFileAreGroupReadableOnly(): void
+    {
+        $nested = $this->logDirectory . '/fresh';
+        $logger = new FileLogger($nested);
+        $logger->info('hello');
+
+        clearstatcache();
+        $this->assertSame(0750, fileperms($nested) & 0777);
+
+        $files = glob($nested . '/*.log');
+        $this->assertNotEmpty($files);
+        $this->assertSame(0640, fileperms($files[0]) & 0777);
+
+        foreach ($files as $file) {
+            unlink($file);
+        }
+        rmdir($nested);
+    }
+
+    public function testNewlinesInMessageItselfAreSanitized(): void
+    {
+        $logger = new FileLogger($this->logDirectory);
+        $logger->info("line-one\nFAKE: forged entry");
+
+        $content = $this->getLogContent();
+
+        $this->assertStringContainsString('line-one FAKE: forged entry', $content);
+    }
+
     public function testInterpolatedContextCannotInjectNewLogLines(): void
     {
         $logger = new FileLogger($this->logDirectory);

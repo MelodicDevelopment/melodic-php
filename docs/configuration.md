@@ -24,6 +24,8 @@ config.json  →  config.{APP_ENV}.json  →  config.dev.json
 
 Each file is deep-merged on top of the previous, so you only need to specify the values that differ from the base.
 
+**Merge semantics:** objects (maps) merge key-by-key, but **arrays (lists) replace wholesale**. If the base defines `"allowedOrigins": ["https://a.example.com", "https://b.example.com"]` and the QA file defines `["https://qa.example.com"]`, the result in QA is exactly `["https://qa.example.com"]` — base entries never bleed through. An empty `{}`/`[]` override leaves an existing object untouched (JSON decoding cannot distinguish the two), so to clear a list, the base value must be a non-empty list you override.
+
 ### The APP_ENV Variable
 
 Set the `APP_ENV` environment variable to select which environment file to load:

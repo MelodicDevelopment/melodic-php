@@ -112,10 +112,17 @@ class AuthCallbackMiddleware implements MiddlewareInterface
         // covered too (a raw session_regenerate_id() would silently skip them).
         $this->session->regenerate(true);
 
-        $redirectTo = $this->session->get('melodic_redirect_after_login', $this->config->postLoginRedirect);
+        $redirectTo = (string) $this->session->get('melodic_redirect_after_login', $this->config->postLoginRedirect);
         $this->session->remove('melodic_redirect_after_login');
 
-        $response = new RedirectResponse((string) $redirectTo);
+        // Defense-in-depth against open redirects: even if the stored value was
+        // tampered with, only local paths are honored; anything else falls back
+        // to the author-configured post-login target.
+        if (!SafeRedirect::isSafePath($redirectTo)) {
+            $redirectTo = $this->config->postLoginRedirect;
+        }
+
+        $response = new RedirectResponse($redirectTo);
 
         return $response->withCookie($this->config->cookieName, $result->token, $this->cookieOptions(
             time() + $this->config->cookieLifetime,

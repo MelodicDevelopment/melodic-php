@@ -218,4 +218,42 @@ class EventDispatcherTest extends TestCase
 
         $this->assertSame($a, $b);
     }
+    public function testRemoveListenerStopsFutureDispatches(): void
+    {
+        $dispatcher = new EventDispatcher();
+        $calls = 0;
+        $listener = function (object $e) use (&$calls): void { $calls++; };
+
+        $dispatcher->listen(\stdClass::class, $listener);
+        $dispatcher->dispatch(new \stdClass());
+        $this->assertSame(1, $calls);
+
+        $dispatcher->removeListener(\stdClass::class, $listener);
+        $dispatcher->dispatch(new \stdClass());
+
+        $this->assertSame(1, $calls);
+        $this->assertSame([], $dispatcher->getListeners(\stdClass::class));
+    }
+
+    public function testRemoveListenerLeavesOtherListenersIntact(): void
+    {
+        $dispatcher = new EventDispatcher();
+        $removed = function (object $e): void {};
+        $kept = function (object $e): void {};
+
+        $dispatcher->listen(\stdClass::class, $removed);
+        $dispatcher->listen(\stdClass::class, $kept);
+        $dispatcher->removeListener(\stdClass::class, $removed);
+
+        $this->assertSame([$kept], $dispatcher->getListeners(\stdClass::class));
+    }
+
+    public function testRemoveUnknownListenerIsNoOp(): void
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->removeListener(\stdClass::class, function (object $e): void {});
+
+        $this->assertSame([], $dispatcher->getListeners(\stdClass::class));
+    }
+
 }

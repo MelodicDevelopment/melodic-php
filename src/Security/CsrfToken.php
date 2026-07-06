@@ -45,8 +45,16 @@ class CsrfToken
             return false;
         }
 
+        if (!hash_equals($stored, $token)) {
+            // Leave the stored token intact on mismatch: consuming it here
+            // would let a forged/garbage POST invalidate the token embedded in
+            // the user's legitimately rendered form (CSRF-protection self-DoS).
+            return false;
+        }
+
+        // One-time use: consume only on successful validation.
         $this->session->remove(self::SESSION_KEY);
 
-        return hash_equals($stored, $token);
+        return true;
     }
 }

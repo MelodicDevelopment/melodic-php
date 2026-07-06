@@ -35,6 +35,14 @@ class AuthLoginRenderer implements AuthLoginRendererInterface
 
         $customCssBlock = '';
         if ($page->customCss !== null) {
+            // customCss is author-controlled config, not user input — but it is
+            // emitted raw inside a <style> element, so a literal "</" (as in
+            // "</style><script>") would turn configuration into markup. Valid
+            // CSS never needs that sequence, so reject it outright.
+            if (str_contains($page->customCss, '</')) {
+                throw new SecurityException('loginPage.customCss must not contain the sequence "</".');
+            }
+
             $customCssBlock = "<style>{$page->customCss}</style>";
         }
 

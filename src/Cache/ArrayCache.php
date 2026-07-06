@@ -20,6 +20,12 @@ class ArrayCache implements CacheInterface
 
     public function set(string $key, mixed $value, ?int $ttl = null): bool
     {
+        // PSR-16 semantics (matching FileCache): a non-positive TTL means
+        // "already expired" — clear any existing entry instead of storing.
+        if ($ttl !== null && $ttl <= 0) {
+            return $this->delete($key);
+        }
+
         $this->cache[$key] = [
             'value' => $value,
             'expires' => $ttl !== null ? time() + $ttl : null,

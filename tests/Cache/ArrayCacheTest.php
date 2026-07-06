@@ -113,4 +113,23 @@ class ArrayCacheTest extends TestCase
         $this->assertSame(['a', 'b'], $this->cache->get('array'));
         $this->assertNull($this->cache->get('null'));
     }
+    public function testNonPositiveTtlDoesNotStore(): void
+    {
+        $cache = new ArrayCache();
+
+        $this->assertTrue($cache->set('ephemeral', 'value', 0));
+
+        $this->assertNull($cache->get('ephemeral'));
+        $this->assertFalse($cache->has('ephemeral'));
+    }
+
+    public function testNonPositiveTtlClearsExistingEntry(): void
+    {
+        $cache = new ArrayCache();
+        $cache->set('replaceme', 'old');
+        $cache->set('replaceme', 'new', -5);
+
+        $this->assertNull($cache->get('replaceme'));
+    }
+
 }

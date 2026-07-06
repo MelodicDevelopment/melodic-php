@@ -17,6 +17,8 @@ class Container implements ContainerInterface
     private array $instances = [];
     /** @var array<string, bool> */
     private array $resolving = [];
+    /** @var array<class-string, ReflectionClass<object>> Reflection cache — resolve() runs per request for every unbound class. */
+    private array $reflectors = [];
 
     public function get(string $id): mixed
     {
@@ -69,6 +71,19 @@ class Container implements ContainerInterface
         // Drop any previously cached instance so re-registering a singleton
         // actually takes effect (matches bind()'s behavior).
         unset($this->instances[$abstract]);
+
+        // singleton(Interface, Concrete) also aliases the concrete class to the
+        // shared binding — otherwise a direct Concrete type-hint would quietly
+        // auto-wire a *second* instance behind the singleton's back. An explicit
+        // pre-existing binding for the concrete class is never overridden.
+        if (is_string($concrete) && $concrete !== $abstract && !isset($this->bindings[$concrete])) {
+            $this->bindings[$concrete] = [
+                'concrete' => fn(ContainerInterface $c) => $c->get($abstract),
+                'singleton' => false,
+            ];
+
+            unset($this->instances[$concrete]);
+        }
     }
 
     public function instance(string $abstract, object $instance): void
@@ -90,13 +105,13 @@ class Container implements ContainerInterface
         if (isset($this->resolving[$class])) {
             $chain = array_keys($this->resolving);
             $chain[] = $class;
-            throw new RuntimeException(
+            throw new CircularDependencyException(
                 "Circular dependency detected: " . implode(' -> ', $chain)
             );
         }
 
         if (!class_exists($class)) {
-            throw new RuntimeException(
+            throw new ContainerException(
                 "Unable to resolve '{$class}': class does not exist and no binding was registered."
             );
         }
@@ -104,10 +119,10 @@ class Container implements ContainerInterface
         $this->resolving[$class] = true;
 
         try {
-            $reflector = new ReflectionClass($class);
+            $reflector = $this->reflectors[$class] ??= new ReflectionClass($class);
 
             if (!$reflector->isInstantiable()) {
-                throw new RuntimeException(
+                throw new ContainerException(
                     "Unable to resolve '{$class}': class is not instantiable."
                 );
             }
@@ -139,7 +154,15 @@ class Container implements ContainerInterface
 
             try {
                 return $this->get($typeName);
-            } catch (RuntimeException $e) {
+            } catch (CircularDependencyException $e) {
+                // A cycle is a structural bug — silently substituting the
+                // default value would mask it.
+                throw $e;
+            } catch (ContainerException $e) {
+                // Genuinely unresolvable (unbound/unknown) → the declared
+                // default is the intended fallback. Exceptions from user code
+                // (factories, constructors) are not ContainerExceptions and
+                // propagate instead of silently becoming the default.
                 if ($param->isDefaultValueAvailable()) {
                     return $param->getDefaultValue();
                 }
@@ -152,7 +175,7 @@ class Container implements ContainerInterface
             return $param->getDefaultValue();
         }
 
-        throw new RuntimeException(
+        throw new ContainerException(
             "Unable to resolve parameter '\${$param->getName()}' "
             . "in class '{$forClass}': no type hint and no default value."
         );

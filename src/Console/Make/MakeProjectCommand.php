@@ -23,6 +23,11 @@ class MakeProjectCommand extends Command
             return 1;
         }
 
+        if (!Stub::isValidIdentifier($name)) {
+            $this->error("Invalid project name '{$name}': use letters, digits, dashes, and underscores only (e.g. my-app).");
+            return 1;
+        }
+
         $type = $this->parseType($args);
         $projectDir = getcwd() . '/' . $name;
 

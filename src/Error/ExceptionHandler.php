@@ -78,8 +78,18 @@ class ExceptionHandler
 
     private function resolveMessage(\Throwable $e, int $statusCode): string
     {
-        if ($statusCode >= 500 && !$this->debug) {
-            return 'An internal server error occurred.';
+        if (!$this->debug) {
+            if ($statusCode >= 500) {
+                return 'An internal server error occurred.';
+            }
+
+            // SecurityException messages describe *why* auth failed (bad
+            // audience, expired token, reuse detected, ...) — internal detail
+            // a client must not see. HttpException messages are author-written
+            // and client-safe, so those pass through.
+            if ($e instanceof SecurityException) {
+                return 'Authentication failed.';
+            }
         }
 
         return $e->getMessage() ?: $this->defaultStatusMessage($statusCode);
@@ -121,9 +131,11 @@ class ExceptionHandler
         $contentType = $request->header('Content-Type') ?? '';
         $path = $request->path();
 
+        // Segment-boundary match: /api and /api/... are API paths, /apiary is not.
         return str_contains($accept, 'application/json')
             || str_contains($contentType, 'application/json')
-            || str_starts_with($path, '/api');
+            || $path === '/api'
+            || str_starts_with($path, '/api/');
     }
 
     private function buildJsonResponse(\Throwable $e, int $statusCode, string $message): JsonResponse

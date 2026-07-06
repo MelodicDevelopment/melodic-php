@@ -48,4 +48,25 @@ final class RedirectResponseTest extends TestCase
 
         $this->assertSame('', $response->getBody());
     }
+    public function testLocalAcceptsLocalPath(): void
+    {
+        $response = RedirectResponse::local('/dashboard');
+
+        $this->assertSame('/dashboard', $response->getHeaders()['Location']);
+    }
+
+    public function testLocalRejectsOffSiteTargets(): void
+    {
+        foreach (['//evil.com', '/\\evil.com', 'https://evil.com', 'evil.com'] as $bad) {
+            $rejected = false;
+
+            try {
+                RedirectResponse::local($bad);
+            } catch (\InvalidArgumentException) {
+                $rejected = true;
+            }
+
+            $this->assertTrue($rejected, "Expected '{$bad}' to be rejected");
+        }
+    }
 }

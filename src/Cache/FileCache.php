@@ -18,6 +18,16 @@ class FileCache implements CacheInterface
         if (!is_dir($this->cacheDir) && !mkdir($this->cacheDir, 0700, true) && !is_dir($this->cacheDir)) {
             throw new \RuntimeException("Unable to create cache directory: {$this->cacheDir}");
         }
+
+        // An existing directory (the normal deploy case) may have been created
+        // with looser permissions than mkdir() above would use — tighten it so
+        // the guarantee holds regardless of who created the directory.
+        clearstatcache(true, $this->cacheDir);
+        $perms = fileperms($this->cacheDir);
+
+        if ($perms !== false && ($perms & 0077) !== 0 && !chmod($this->cacheDir, 0700)) {
+            throw new \RuntimeException("Unable to restrict cache directory permissions: {$this->cacheDir}");
+        }
     }
 
     public function get(string $key, mixed $default = null): mixed
@@ -67,13 +77,15 @@ class FileCache implements CacheInterface
 
     public function clear(): bool
     {
-        $files = glob($this->cacheDir . '/*' . self::EXTENSION);
+        $entries = glob($this->cacheDir . '/*' . self::EXTENSION);
+        // Also sweep temp files orphaned by a crash between write and rename.
+        $orphans = glob($this->cacheDir . '/*' . self::EXTENSION . '.*.tmp');
 
-        if ($files === false) {
+        if ($entries === false || $orphans === false) {
             return false;
         }
 
-        foreach ($files as $file) {
+        foreach ([...$entries, ...$orphans] as $file) {
             if (is_file($file)) {
                 unlink($file);
             }
@@ -130,6 +142,15 @@ class FileCache implements CacheInterface
         $tmp = $path . '.' . getmypid() . '.tmp';
 
         if (file_put_contents($tmp, $contents, LOCK_EX) === false) {
+            return false;
+        }
+
+        // Entries are unserialized on read, so keep them owner-only: a
+        // world-readable file could leak cached secrets, and loosening to
+        // world-writable would enable object-injection via a planted payload.
+        if (!chmod($tmp, 0600)) {
+            @unlink($tmp);
+
             return false;
         }
 

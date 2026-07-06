@@ -187,4 +187,37 @@ class FileCacheTest extends TestCase
 
         $this->assertNull($this->cache->get('replaceme'));
     }
+
+    public function testTightensPermissionsOfExistingDirectory(): void
+    {
+        $dir = $this->cacheDir . '/loose';
+        mkdir($dir, 0755);
+        chmod($dir, 0755); // mkdir mode is masked by umask; force the loose perms
+
+        new FileCache($dir);
+
+        clearstatcache(true, $dir);
+        $this->assertSame(0700, fileperms($dir) & 0777);
+
+        rmdir($dir);
+    }
+
+    public function testCacheFilesAreOwnerOnly(): void
+    {
+        $this->cache->set('secret', 'value');
+
+        $path = $this->cacheDir . '/' . md5('secret') . '.cache';
+        clearstatcache(true, $path);
+        $this->assertSame(0600, fileperms($path) & 0777);
+    }
+
+    public function testClearSweepsOrphanedTempFiles(): void
+    {
+        $orphan = $this->cacheDir . '/' . md5('crashed') . '.cache.1234.tmp';
+        file_put_contents($orphan, 'partial write');
+
+        $this->assertTrue($this->cache->clear());
+
+        $this->assertFileDoesNotExist($orphan);
+    }
 }

@@ -36,8 +36,20 @@ class OidcProvider
     {
         $discovery = $this->discover();
 
-        return $discovery['issuer']
+        $issuer = $discovery['issuer']
             ?? throw new SecurityException('OIDC discovery document missing issuer.');
+
+        // Sanity-check the advertised issuer against the host the discovery
+        // document was fetched from — a compromised or misconfigured discovery
+        // endpoint must not be able to pivot validation to a foreign issuer.
+        $issuerHost = parse_url((string) $issuer, PHP_URL_HOST);
+        $discoveryHost = parse_url($this->discoveryUrl, PHP_URL_HOST);
+
+        if (!is_string($issuerHost) || $issuerHost !== $discoveryHost) {
+            throw new SecurityException('OIDC issuer host does not match the discovery URL host.');
+        }
+
+        return (string) $issuer;
     }
 
     public function getAuthorizationEndpoint(): string

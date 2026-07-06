@@ -14,6 +14,6 @@ final class SafeRedirect
 {
     public static function isSafePath(string $path): bool
     {
-        return preg_match('#^/(?![/\\\\])#', $path) === 1;
+        return \Melodic\Http\RedirectResponse::isLocalPath($path);
     }
 }

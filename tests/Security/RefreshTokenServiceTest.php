@@ -188,6 +188,44 @@ final class RefreshTokenServiceTest extends TestCase
         $this->service->validate($result['token']);
     }
 
+    public function testValidateAndRotateReturnsNewTokenAndInvalidatesOld(): void
+    {
+        $result = $this->service->create(42);
+
+        $rotated = $this->service->validateAndRotate($result['token']);
+
+        $this->assertSame(42, $rotated['model']->userId);
+        $this->assertSame(2, $rotated['model']->generation);
+        $this->assertNotSame($result['token'], $rotated['token']);
+
+        // The presented (old) token must no longer validate.
+        $this->expectException(SecurityException::class);
+        $this->service->validate($result['token']);
+    }
+
+    public function testValidateAndRotateRunsInsideTransactionWhenContextProvided(): void
+    {
+        $context = new SpyDbContext();
+        $service = new RefreshTokenService(
+            $this->repository,
+            new RefreshTokenConfig(tokenLifetime: 3600),
+            $context,
+        );
+
+        $result = $service->create(42);
+        $rotated = $service->validateAndRotate($result['token']);
+
+        $this->assertSame(1, $context->transactionCalls);
+        $this->assertSame(2, $rotated['model']->generation);
+    }
+
+    public function testValidateAndRotatePropagatesValidationFailure(): void
+    {
+        $this->expectException(SecurityException::class);
+
+        $this->service->validateAndRotate('unknown-token');
+    }
+
     public function testRevokeAllForUserDelegatesToRepository(): void
     {
         $result1 = $this->service->create(42);
@@ -202,6 +240,46 @@ final class RefreshTokenServiceTest extends TestCase
         $this->assertTrue($token1->isRevoked());
         $this->assertNotNull($token2);
         $this->assertTrue($token2->isRevoked());
+    }
+}
+
+/**
+ * DbContext double that only counts transaction() calls and runs the callback.
+ */
+final class SpyDbContext implements \Melodic\Data\DbContextInterface
+{
+    public int $transactionCalls = 0;
+
+    public function query(string $class, string $sql, array $params = []): array
+    {
+        return [];
+    }
+
+    public function queryFirst(string $class, string $sql, array $params = []): ?object
+    {
+        return null;
+    }
+
+    public function command(string $sql, array $params = []): int
+    {
+        return 0;
+    }
+
+    public function scalar(string $sql, array $params = []): mixed
+    {
+        return null;
+    }
+
+    public function transaction(callable $callback): mixed
+    {
+        $this->transactionCalls++;
+
+        return $callback($this);
+    }
+
+    public function lastInsertId(): int
+    {
+        return 0;
     }
 }
 

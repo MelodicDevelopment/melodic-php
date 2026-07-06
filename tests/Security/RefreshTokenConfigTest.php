@@ -14,7 +14,7 @@ final class RefreshTokenConfigTest extends TestCase
         $config = new RefreshTokenConfig();
 
         $this->assertSame(604800, $config->tokenLifetime);
-        $this->assertSame('kingdom_refresh', $config->cookieName);
+        $this->assertSame('melodic_refresh', $config->cookieName);
         $this->assertSame('', $config->cookieDomain);
         $this->assertSame('/auth/refresh', $config->cookiePath);
         $this->assertTrue($config->cookieSecure);
@@ -26,7 +26,7 @@ final class RefreshTokenConfigTest extends TestCase
         $config = RefreshTokenConfig::fromArray([]);
 
         $this->assertSame(604800, $config->tokenLifetime);
-        $this->assertSame('kingdom_refresh', $config->cookieName);
+        $this->assertSame('melodic_refresh', $config->cookieName);
         $this->assertSame('', $config->cookieDomain);
         $this->assertSame('/auth/refresh', $config->cookiePath);
         $this->assertTrue($config->cookieSecure);

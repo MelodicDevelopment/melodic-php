@@ -37,4 +37,16 @@ class CsrfTokenTest extends TestCase
         $this->assertTrue($csrf->validate($token));
         $this->assertFalse($csrf->validate($token));
     }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testMismatchDoesNotConsumeStoredToken(): void
+    {
+        $csrf = new CsrfToken(new SessionManager());
+        $token = $csrf->getToken();
+
+        // A forged/garbage POST must not invalidate the legitimate form's token.
+        $this->assertFalse($csrf->validate('forged-token'));
+        $this->assertTrue($csrf->validate($token));
+    }
 }

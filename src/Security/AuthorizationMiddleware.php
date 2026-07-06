@@ -28,7 +28,15 @@ class AuthorizationMiddleware implements MiddlewareInterface
             return new JsonResponse(['error' => 'Authentication required.'], 401);
         }
 
-        if ($this->requiredEntitlements !== [] && $userContext !== null) {
+        // Entitlement requirements are enforced regardless of the
+        // requireAuthentication flag: an anonymous request can never satisfy
+        // an entitlement, so letting it pass here would silently disable the
+        // check whenever requireAuthentication was turned off.
+        if ($this->requiredEntitlements !== []) {
+            if ($userContext === null || !$userContext->isAuthenticated()) {
+                return new JsonResponse(['error' => 'Authentication required.'], 401);
+            }
+
             if (!$userContext->hasAnyEntitlement(...$this->requiredEntitlements)) {
                 return new JsonResponse(['error' => 'Insufficient permissions.'], 403);
             }

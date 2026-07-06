@@ -47,9 +47,13 @@ class OidcAuthProvider implements AuthProviderInterface
     {
         $state = OAuthClient::generateState();
         $codeVerifier = OAuthClient::generateCodeVerifier();
+        // OIDC nonce binds the id_token to this login attempt: a captured or
+        // replayed id_token carries the wrong (or no) nonce and is rejected.
+        $nonce = OAuthClient::generateState();
 
         $session->set("melodic_oauth_state_{$this->config->name}", $state);
         $session->set("melodic_oauth_verifier_{$this->config->name}", $codeVerifier);
+        $session->set("melodic_oauth_nonce_{$this->config->name}", $nonce);
 
         $codeChallenge = rtrim(strtr(base64_encode(hash('sha256', $codeVerifier, true)), '+/', '-_'), '=');
 
@@ -59,6 +63,7 @@ class OidcAuthProvider implements AuthProviderInterface
             'redirect_uri' => $this->config->redirectUri,
             'scope' => $this->config->scopes ?: 'openid profile email',
             'state' => $state,
+            'nonce' => $nonce,
             'code_challenge' => $codeChallenge,
             'code_challenge_method' => 'S256',
         ];
@@ -89,9 +94,11 @@ class OidcAuthProvider implements AuthProviderInterface
 
         $savedState = $session->get("melodic_oauth_state_{$this->config->name}");
         $codeVerifier = $session->get("melodic_oauth_verifier_{$this->config->name}");
+        $savedNonce = $session->get("melodic_oauth_nonce_{$this->config->name}");
 
         $session->remove("melodic_oauth_state_{$this->config->name}");
         $session->remove("melodic_oauth_verifier_{$this->config->name}");
+        $session->remove("melodic_oauth_nonce_{$this->config->name}");
 
         if ($savedState === null || !hash_equals((string) $savedState, (string) $state)) {
             throw new SecurityException('Invalid OAuth state parameter.');
@@ -103,13 +110,29 @@ class OidcAuthProvider implements AuthProviderInterface
 
         $tokenResponse = $this->exchangeCode((string) $code, (string) $codeVerifier);
 
-        $token = $tokenResponse['id_token'] ?? $tokenResponse['access_token'] ?? null;
+        // Only the id_token is acceptable here: it is what validateToken()'s
+        // issuer/audience/nonce checks are specified against. An access_token
+        // may be an opaque string or a JWT minted for a different audience —
+        // treating it as proof of identity invites token-confusion.
+        $token = $tokenResponse['id_token'] ?? null;
 
         if ($token === null) {
-            throw new SecurityException('No token received from authorization server.');
+            throw new SecurityException('No id_token received from authorization server.');
         }
 
         $claims = $this->validateToken($token);
+
+        // Bind the id_token to the login attempt that requested it.
+        $tokenNonce = $claims['nonce'] ?? null;
+
+        if (
+            $savedNonce === null
+            || !is_string($tokenNonce)
+            || !hash_equals((string) $savedNonce, $tokenNonce)
+        ) {
+            throw new SecurityException('Invalid token nonce.');
+        }
+
         $claims['provider'] = $this->config->name;
 
         return new AuthResult(
@@ -170,8 +193,13 @@ class OidcAuthProvider implements AuthProviderInterface
         return $claims;
     }
 
-    /** @return array<string, mixed> */
-    private function exchangeCode(string $code, string $codeVerifier): array
+    /**
+     * Exchange the authorization code for tokens. Protected so tests can stub
+     * the network round-trip and drive the full callback path.
+     *
+     * @return array<string, mixed>
+     */
+    protected function exchangeCode(string $code, string $codeVerifier): array
     {
         $postFields = [
             'grant_type' => 'authorization_code',

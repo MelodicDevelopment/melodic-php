@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Melodic\Security;
 
+use Melodic\Data\DbContextInterface;
+
 class RefreshTokenService
 {
     public function __construct(
         private readonly RefreshTokenRepositoryInterface $repository,
         private readonly RefreshTokenConfig $config,
+        private readonly ?DbContextInterface $context = null,
     ) {
     }
 
@@ -91,6 +94,28 @@ class RefreshTokenService
         $this->repository->store($refreshToken);
 
         return ['token' => $rawToken, 'model' => $refreshToken];
+    }
+
+    /**
+     * Validate then rotate as one step. When the service was constructed with
+     * a DbContext, both run inside a single transaction, closing the window in
+     * which two concurrent requests presenting the same token can each pass
+     * validation before either revokes the family (reuse-detection TOCTOU).
+     * For a hard guarantee, repositories should also lock the row in
+     * findByTokenHash (SELECT ... FOR UPDATE) when called inside a transaction.
+     *
+     * @return array{token: string, model: RefreshToken}
+     */
+    public function validateAndRotate(string $rawToken): array
+    {
+        if ($this->context === null) {
+            return $this->rotate($this->validate($rawToken));
+        }
+
+        /** @var array{token: string, model: RefreshToken} */
+        return $this->context->transaction(
+            fn(): array => $this->rotate($this->validate($rawToken)),
+        );
     }
 
     public function revokeAllForUser(int $userId): void

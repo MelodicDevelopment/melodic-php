@@ -8,7 +8,7 @@ class RefreshTokenConfig
 {
     public function __construct(
         public readonly int $tokenLifetime = 604800,
-        public readonly string $cookieName = 'kingdom_refresh',
+        public readonly string $cookieName = 'melodic_refresh',
         public readonly string $cookieDomain = '',
         public readonly string $cookiePath = '/auth/refresh',
         public readonly bool $cookieSecure = true,
@@ -21,7 +21,7 @@ class RefreshTokenConfig
     {
         return new self(
             tokenLifetime: (int) ($config['tokenLifetime'] ?? 604800),
-            cookieName: (string) ($config['cookieName'] ?? 'kingdom_refresh'),
+            cookieName: (string) ($config['cookieName'] ?? 'melodic_refresh'),
             cookieDomain: (string) ($config['cookieDomain'] ?? ''),
             cookiePath: (string) ($config['cookiePath'] ?? '/auth/refresh'),
             cookieSecure: (bool) ($config['cookieSecure'] ?? true),

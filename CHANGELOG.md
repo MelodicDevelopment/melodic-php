@@ -4,10 +4,11 @@ All notable changes to the Melodic PHP framework are documented here. The format
 is based on [Keep a Changelog](https://keepachangelog.com/), and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] — Review remediation (Phases 1–3)
+## [4.0.0] — Review remediation (Phases 1–3)
 
 Remediation of the remaining findings from the multi-agent code review.
-Contains behavior changes — at least a minor version bump is required.
+Several defaults tightened toward "secure by default" — see
+[`MIGRATION-4.0.md`](MIGRATION-4.0.md) for upgrade steps.
 
 ### Security
 

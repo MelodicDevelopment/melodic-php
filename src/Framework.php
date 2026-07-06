@@ -6,5 +6,5 @@ namespace Melodic;
 
 class Framework
 {
-    public const VERSION = '3.0.0';
+    public const VERSION = '4.0.0';
 }

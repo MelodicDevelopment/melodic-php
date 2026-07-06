@@ -69,9 +69,11 @@ class Model implements \JsonSerializable
             throw new ModelBindingException($field, "Field '{$field}' may not be null.");
         }
 
-        // Non-builtin types (nested models, enums, DateTime, ...) are left as-is.
+        // Non-builtin types: backed enums and DateTime are coerced from wire
+        // scalars (bad input → 400); other classes (nested models, ...) pass
+        // through untouched.
         if (!$type->isBuiltin()) {
-            return $value;
+            return self::toObject($type->getName(), $value, $field);
         }
 
         return match ($type->getName()) {
@@ -81,6 +83,56 @@ class Model implements \JsonSerializable
             'string' => self::toString($value, $field),
             default => $value, // array, object, mixed, iterable — no coercion
         };
+    }
+
+    private static function toObject(string $class, mixed $value, string $field): mixed
+    {
+        if ($value instanceof $class) {
+            return $value;
+        }
+
+        if (is_subclass_of($class, \BackedEnum::class)) {
+            return self::toEnum($class, $value, $field);
+        }
+
+        if (in_array($class, [\DateTimeImmutable::class, \DateTimeInterface::class, \DateTime::class], true)) {
+            return self::toDateTime($class, $value, $field);
+        }
+
+        return $value;
+    }
+
+    /** @param class-string<\BackedEnum> $class */
+    private static function toEnum(string $class, mixed $value, string $field): \BackedEnum
+    {
+        $backingType = (string) (new \ReflectionEnum($class))->getBackingType();
+
+        if ($backingType === 'int' && is_string($value) && preg_match('/^-?\d+$/', $value) === 1) {
+            $value = (int) $value;
+        }
+
+        $case = ($backingType === 'int' && is_int($value)) || ($backingType === 'string' && is_string($value))
+            ? $class::tryFrom($value)
+            : null;
+
+        if ($case === null) {
+            throw new ModelBindingException($field, "Field '{$field}' is not one of the allowed values.");
+        }
+
+        return $case;
+    }
+
+    private static function toDateTime(string $class, mixed $value, string $field): \DateTimeInterface
+    {
+        if (!is_string($value) || trim($value) === '') {
+            throw new ModelBindingException($field, "Field '{$field}' must be a date/time string.");
+        }
+
+        try {
+            return $class === \DateTime::class ? new \DateTime($value) : new \DateTimeImmutable($value);
+        } catch (\Exception) {
+            throw new ModelBindingException($field, "Field '{$field}' must be a valid date/time.");
+        }
     }
 
     private static function toInt(mixed $value, string $field): int

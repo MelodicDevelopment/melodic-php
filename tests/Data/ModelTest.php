@@ -268,6 +268,95 @@ final class ModelTest extends TestCase
             $this->assertSame('Id', $e->field);
         }
     }
+
+    // -------------------------------------------------------
+    // Enum / DateTime coercion in fromArray
+    // -------------------------------------------------------
+
+    public function testFromArrayCoercesBackedEnums(): void
+    {
+        $model = TypedFieldsModel::fromArray([
+            'Status' => 'active',
+            'Priority' => 2,
+            'CreatedAt' => '2026-01-15 10:30:00',
+        ]);
+
+        $this->assertSame(TestStatus::Active, $model->Status);
+        $this->assertSame(TestPriority::High, $model->Priority);
+    }
+
+    public function testFromArrayCoercesNumericStringToIntBackedEnum(): void
+    {
+        $model = TypedFieldsModel::fromArray([
+            'Status' => 'inactive',
+            'Priority' => '1',
+            'CreatedAt' => '2026-01-15 10:30:00',
+        ]);
+
+        $this->assertSame(TestPriority::Low, $model->Priority);
+    }
+
+    public function testFromArrayCoercesDateTimeStrings(): void
+    {
+        $model = TypedFieldsModel::fromArray([
+            'Status' => 'active',
+            'Priority' => 1,
+            'CreatedAt' => '2026-01-15T10:30:00+00:00',
+            'UpdatedAt' => '2026-02-01 08:00:00',
+        ]);
+
+        $this->assertInstanceOf(\DateTimeImmutable::class, $model->CreatedAt);
+        $this->assertSame('2026-01-15T10:30:00+00:00', $model->CreatedAt->format(DATE_ATOM));
+        $this->assertInstanceOf(\DateTime::class, $model->UpdatedAt);
+    }
+
+    public function testFromArrayThrowsBindingExceptionOnInvalidEnumValue(): void
+    {
+        try {
+            TypedFieldsModel::fromArray(['Status' => 'bogus']);
+            $this->fail('Expected ModelBindingException');
+        } catch (ModelBindingException $e) {
+            $this->assertSame('Status', $e->field);
+        }
+    }
+
+    public function testFromArrayThrowsBindingExceptionOnWrongEnumBackingType(): void
+    {
+        $this->expectException(ModelBindingException::class);
+
+        TypedFieldsModel::fromArray(['Priority' => 'high']);
+    }
+
+    public function testFromArrayThrowsBindingExceptionOnInvalidDateTime(): void
+    {
+        try {
+            TypedFieldsModel::fromArray(['CreatedAt' => 'not-a-date']);
+            $this->fail('Expected ModelBindingException');
+        } catch (ModelBindingException $e) {
+            $this->assertSame('CreatedAt', $e->field);
+        }
+    }
+
+    public function testFromArrayThrowsBindingExceptionOnNonStringDateTime(): void
+    {
+        $this->expectException(ModelBindingException::class);
+
+        TypedFieldsModel::fromArray(['CreatedAt' => ['nested' => 'array']]);
+    }
+
+    public function testFromArrayAcceptsAlreadyTypedEnumAndDateTime(): void
+    {
+        $now = new \DateTimeImmutable('2026-03-01 12:00:00');
+
+        $model = TypedFieldsModel::fromArray([
+            'Status' => TestStatus::Inactive,
+            'Priority' => TestPriority::Low,
+            'CreatedAt' => $now,
+        ]);
+
+        $this->assertSame(TestStatus::Inactive, $model->Status);
+        $this->assertSame($now, $model->CreatedAt);
+    }
 }
 
 class TestModel extends Model
@@ -294,4 +383,24 @@ class PartialUpdateModel extends Model
     public ?string $Name = null;
     public ?string $Description = null;
     public ?bool $Active = null;
+}
+
+enum TestStatus: string
+{
+    case Active = 'active';
+    case Inactive = 'inactive';
+}
+
+enum TestPriority: int
+{
+    case Low = 1;
+    case High = 2;
+}
+
+class TypedFieldsModel extends Model
+{
+    public TestStatus $Status;
+    public TestPriority $Priority;
+    public \DateTimeImmutable $CreatedAt;
+    public ?\DateTime $UpdatedAt = null;
 }

@@ -158,6 +158,10 @@ class DbContext implements DbContextInterface
             return $value;
         }
 
+        if (!$type->isBuiltin()) {
+            return $this->castObject($type->getName(), $value);
+        }
+
         return match ($type->getName()) {
             'int' => (int) $value,
             'float' => (float) $value,
@@ -165,6 +169,31 @@ class DbContext implements DbContextInterface
             'string' => (string) $value,
             default => $value,
         };
+    }
+
+    /**
+     * Cast a database scalar to a declared object type: backed-enum columns are
+     * rehydrated via from() (bad data is a server-side integrity error, so it
+     * throws), and DateTime-typed columns are parsed from the driver's string
+     * form. Any other class passes through untouched.
+     */
+    private function castObject(string $class, mixed $value): mixed
+    {
+        if (is_subclass_of($class, \BackedEnum::class)) {
+            $backingType = (string) (new \ReflectionEnum($class))->getBackingType();
+
+            return $class::from($backingType === 'int' ? (int) $value : (string) $value);
+        }
+
+        if ($class === \DateTimeImmutable::class || $class === \DateTimeInterface::class) {
+            return new \DateTimeImmutable((string) $value);
+        }
+
+        if ($class === \DateTime::class) {
+            return new \DateTime((string) $value);
+        }
+
+        return $value;
     }
 
     /**

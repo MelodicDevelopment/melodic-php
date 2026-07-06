@@ -212,6 +212,58 @@ class MakeEntityCommandTest extends TestCase
         $this->assertFileDoesNotExist($this->tempDir . '/src/Services/.gitkeep');
     }
 
+    public function testMakeEntityRejectsPathTraversalName(): void
+    {
+        $console = $this->createConsole();
+
+        ob_start();
+        $exitCode = $console->run(['melodic', 'make:entity', '../../evil']);
+        ob_get_clean();
+
+        $this->assertSame(1, $exitCode);
+        // The DTO stub path would have resolved here had the write happened.
+        $this->assertFileDoesNotExist($this->tempDir . '/evilModel.php');
+    }
+
+    public function testMakeEntityRejectsSpecialCharacterNames(): void
+    {
+        $console = $this->createConsole();
+
+        foreach (['Chu"rch', "Chu'rch", 'Church;drop', 'Chu.rch', 'Chu/rch', '1Church'] as $bad) {
+            ob_start();
+            $exitCode = $console->run(['melodic', 'make:entity', $bad]);
+            ob_get_clean();
+
+            $this->assertSame(1, $exitCode, "Expected '{$bad}' to be rejected");
+        }
+    }
+
+    public function testMakeEntityRejectionHappensBeforeGitkeepRemoval(): void
+    {
+        mkdir($this->tempDir . '/src/DTO', 0755, true);
+        file_put_contents($this->tempDir . '/src/DTO/.gitkeep', '');
+
+        $console = $this->createConsole();
+
+        ob_start();
+        $console->run(['melodic', 'make:entity', '../../evil']);
+        ob_get_clean();
+
+        $this->assertFileExists($this->tempDir . '/src/DTO/.gitkeep');
+    }
+
+    public function testMakeEntityFailsOnMalformedComposerJson(): void
+    {
+        file_put_contents($this->tempDir . '/composer.json', '{not json');
+        $console = $this->createConsole();
+
+        ob_start();
+        $exitCode = $console->run(['melodic', 'make:entity', 'Church']);
+        ob_get_clean();
+
+        $this->assertSame(1, $exitCode);
+    }
+
     private function createProjectStructure(): void
     {
         $composerJson = json_encode([

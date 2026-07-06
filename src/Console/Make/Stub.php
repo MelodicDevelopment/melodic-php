@@ -20,6 +20,17 @@ class Stub
         );
     }
 
+    /**
+     * Whether a scaffolding name is a safe identifier once case-split: letters
+     * and digits only, starting with a letter. Anything else (path separators,
+     * dots, quotes, semicolons, ...) could escape the target directory or
+     * corrupt the generated code, so commands reject it before any file write.
+     */
+    public static function isValidIdentifier(string $input): bool
+    {
+        return preg_match('/^[A-Za-z][A-Za-z0-9]*$/', self::pascalCase($input)) === 1;
+    }
+
     public static function pascalCase(string $input): string
     {
         // Handle snake_case, kebab-case, and space-separated

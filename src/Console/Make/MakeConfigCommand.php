@@ -23,6 +23,15 @@ class MakeConfigCommand extends Command
         }
 
         $environment = strtolower($environment);
+
+        // The name is interpolated into the config file path, so anything
+        // beyond letters, digits, dashes, and underscores (slashes, dots, ...)
+        // could escape the config directory.
+        if (preg_match('/^[A-Za-z0-9_-]+$/', $environment) !== 1) {
+            $this->error("Invalid environment name '{$environment}': use letters, digits, dashes, and underscores only.");
+            return 1;
+        }
+
         $configDir = getcwd() . '/config';
         $filePath = $configDir . '/config.' . $environment . '.json';
 

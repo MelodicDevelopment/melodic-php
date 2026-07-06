@@ -271,6 +271,31 @@ class MakeProjectCommandTest extends TestCase
         $this->assertStringContainsString('namespace NsTest\\Providers;', $content);
     }
 
+    public function testMakeProjectRejectsPathTraversalName(): void
+    {
+        $console = $this->createConsole();
+
+        ob_start();
+        $exitCode = $console->run(['melodic', 'make:project', '../evil']);
+        ob_get_clean();
+
+        $this->assertSame(1, $exitCode);
+        $this->assertDirectoryDoesNotExist(dirname($this->tempDir) . '/evil');
+    }
+
+    public function testMakeProjectRejectsSpecialCharacterNames(): void
+    {
+        $console = $this->createConsole();
+
+        foreach (['my.app', 'my/app', 'my"app', 'app;rm', '1app'] as $bad) {
+            ob_start();
+            $exitCode = $console->run(['melodic', 'make:project', $bad]);
+            ob_get_clean();
+
+            $this->assertSame(1, $exitCode, "Expected '{$bad}' to be rejected");
+        }
+    }
+
     private function createConsole(): Console
     {
         $console = new Console();

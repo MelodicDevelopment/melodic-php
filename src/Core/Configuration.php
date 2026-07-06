@@ -121,6 +121,14 @@ class Configuration
                 isset($base[$key])
                 && is_array($base[$key])
                 && is_array($value)
+                // Lists replace wholesale — recursing by index would leave
+                // stale trailing base elements when the override is shorter
+                // (e.g. base allowedOrigins [a, b] overridden by [qa] must
+                // yield [qa], not [qa, b]). Only associative maps merge.
+                // Empty arrays are ambiguous in decoded JSON ({} === []), so
+                // they count as maps: an empty override never clobbers a map.
+                && !($base[$key] !== [] && array_is_list($base[$key]))
+                && !($value !== [] && array_is_list($value))
             ) {
                 $base[$key] = $this->deepMerge($base[$key], $value);
             } else {

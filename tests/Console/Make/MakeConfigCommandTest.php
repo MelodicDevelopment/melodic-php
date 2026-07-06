@@ -113,6 +113,34 @@ class MakeConfigCommandTest extends TestCase
         $this->assertFileExists($this->tempDir . '/config/config.qa.json');
     }
 
+    public function testMakeConfigRejectsPathTraversalName(): void
+    {
+        mkdir($this->tempDir . '/config', 0755, true);
+        $console = $this->createConsole();
+
+        ob_start();
+        $exitCode = $console->run(['melodic', 'make:config', '../../foo']);
+        ob_get_clean();
+
+        $this->assertSame(1, $exitCode);
+        $this->assertFileDoesNotExist($this->tempDir . '/config.foo.json');
+        $this->assertFileDoesNotExist(dirname($this->tempDir) . '/config.foo.json');
+    }
+
+    public function testMakeConfigRejectsSpecialCharacterNames(): void
+    {
+        mkdir($this->tempDir . '/config', 0755, true);
+        $console = $this->createConsole();
+
+        foreach (['q a', 'qa.json', 'qa/1', 'qa;rm'] as $bad) {
+            ob_start();
+            $exitCode = $console->run(['melodic', 'make:config', $bad]);
+            ob_get_clean();
+
+            $this->assertSame(1, $exitCode, "Expected '{$bad}' to be rejected");
+        }
+    }
+
     private function createConsole(): Console
     {
         $console = new Console();

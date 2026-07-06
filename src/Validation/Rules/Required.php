@@ -23,6 +23,12 @@ class Required
             return false;
         }
 
+        // An empty array is "no value" the same way '' is — a required
+        // list/collection field must contain at least one element.
+        if ($value === []) {
+            return false;
+        }
+
         return true;
     }
 }

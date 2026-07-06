@@ -31,6 +31,13 @@ class Model implements \JsonSerializable
 
             if ($propertyName !== null) {
                 $property = $reflector->getProperty($propertyName);
+
+                // #[Guarded] properties never bind from wire input (mass-
+                // assignment defense); they can only be set programmatically.
+                if ($property->getAttributes(Guarded::class) !== []) {
+                    continue;
+                }
+
                 $property->setValue($instance, self::coerceValue($property, $value, $key));
                 $instance->_providedKeys[$propertyName] = true;
             }

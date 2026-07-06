@@ -148,6 +148,31 @@ final class ResponseTest extends TestCase
         $this->assertSame(['X-Test' => 'yes'], $modified->getHeaders());
     }
 
+    public function testWithCookieDefaultsAreSecure(): void
+    {
+        $response = (new Response())->withCookie('token', 'xyz');
+
+        $cookie = $this->readCookie($response, 'token');
+        $this->assertTrue($cookie['secure']);
+        $this->assertTrue($cookie['httponly']);
+        $this->assertSame('Lax', $cookie['samesite']);
+    }
+
+    public function testWithCookieSecureCanBeExplicitlyDisabled(): void
+    {
+        $response = (new Response())->withCookie('token', 'xyz', ['secure' => false]);
+
+        $this->assertFalse($this->readCookie($response, 'token')['secure']);
+    }
+
+    /** @return array<string, mixed> */
+    private function readCookie(Response $response, string $name): array
+    {
+        $property = new \ReflectionProperty(Response::class, 'cookies');
+
+        return $property->getValue($response)[$name];
+    }
+
     public function testImmutabilityChainPreservesAllState(): void
     {
         $response = new Response();

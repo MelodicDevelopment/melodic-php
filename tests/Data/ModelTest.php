@@ -270,6 +270,35 @@ final class ModelTest extends TestCase
     }
 
     // -------------------------------------------------------
+    // #[Guarded] mass-assignment defense
+    // -------------------------------------------------------
+
+    public function testGuardedPropertyIsNotBoundFromInput(): void
+    {
+        $model = GuardedModel::fromArray(['Name' => 'Alice', 'Role' => 'admin']);
+
+        $this->assertSame('Alice', $model->Name);
+        $this->assertSame('user', $model->Role);
+    }
+
+    public function testGuardedPropertyIsExcludedFromUpdateArray(): void
+    {
+        $model = GuardedModel::fromArray(['Name' => 'Alice', 'Role' => 'admin']);
+
+        $this->assertSame(['Name' => 'Alice'], $model->toUpdateArray());
+        $this->assertFalse($model->wasProvided('Role'));
+    }
+
+    public function testGuardedPropertyCanBeSetProgrammatically(): void
+    {
+        $model = GuardedModel::fromArray(['Name' => 'Alice']);
+        $model->Role = 'admin';
+
+        $this->assertSame('admin', $model->Role);
+        $this->assertSame('admin', $model->toArray()['role']);
+    }
+
+    // -------------------------------------------------------
     // Enum / DateTime coercion in fromArray
     // -------------------------------------------------------
 
@@ -395,6 +424,14 @@ enum TestPriority: int
 {
     case Low = 1;
     case High = 2;
+}
+
+class GuardedModel extends Model
+{
+    public string $Name;
+
+    #[\Melodic\Data\Guarded]
+    public string $Role = 'user';
 }
 
 class TypedFieldsModel extends Model

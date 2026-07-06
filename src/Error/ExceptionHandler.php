@@ -131,9 +131,11 @@ class ExceptionHandler
         $contentType = $request->header('Content-Type') ?? '';
         $path = $request->path();
 
+        // Segment-boundary match: /api and /api/... are API paths, /apiary is not.
         return str_contains($accept, 'application/json')
             || str_contains($contentType, 'application/json')
-            || str_starts_with($path, '/api');
+            || $path === '/api'
+            || str_starts_with($path, '/api/');
     }
 
     private function buildJsonResponse(\Throwable $e, int $statusCode, string $message): JsonResponse

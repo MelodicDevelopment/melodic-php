@@ -67,6 +67,15 @@ class ExceptionHandlerTest extends TestCase
         $this->assertInstanceOf(JsonResponse::class, $response);
     }
 
+    public function testApiPrefixRequiresSegmentBoundary(): void
+    {
+        $request = $this->makeRequest(uri: '/apiary/hives');
+
+        $response = $this->handler->handle(new \RuntimeException('fail'), $request);
+
+        $this->assertNotInstanceOf(JsonResponse::class, $response);
+    }
+
     public function testReturnsHtmlForNonApiNonJsonRequest(): void
     {
         $request = $this->makeRequest(uri: '/home');

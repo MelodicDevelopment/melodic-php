@@ -180,6 +180,28 @@ class RouterTest extends TestCase
     // Route groups with prefix
     // -------------------------------------------------------
 
+    public function testLiteralDotInPatternMatchesLiterally(): void
+    {
+        $router = new Router();
+        $router->get('/v1.0/users', 'UsersController', 'index');
+
+        $this->assertNotNull($router->match(HttpMethod::GET, '/v1.0/users'));
+        // Previously the dot was a regex wildcard, so /v1x0/users matched too.
+        $this->assertNull($router->match(HttpMethod::GET, '/v1x0/users'));
+    }
+
+    public function testLiteralSegmentsWithParamsStillCapture(): void
+    {
+        $router = new Router();
+        $router->get('/v1.0/users/{id}', 'UsersController', 'show');
+
+        $result = $router->match(HttpMethod::GET, '/v1.0/users/42');
+
+        $this->assertNotNull($result);
+        $this->assertSame('42', $result['params']['id']);
+        $this->assertNull($router->match(HttpMethod::GET, '/v1x0/users/42'));
+    }
+
     public function testGroupAppliesPrefixToRoutes(): void
     {
         $this->router->group('/api', function (Router $r) {

@@ -147,6 +147,14 @@ class ValidatorTest extends TestCase
         $this->assertArrayHasKey('username', $result->errors);
     }
 
+    public function testRequiredFailsWithEmptyArray(): void
+    {
+        $rule = new Required();
+
+        $this->assertFalse($rule->validate([]));
+        $this->assertTrue($rule->validate(['one']));
+    }
+
     // --- MinLength rule ---
 
     public function testMinLengthPassesWhenLongEnough(): void

@@ -116,7 +116,7 @@ class ViewEngine
             throw new RuntimeException('No section has been started.');
         }
 
-        $this->sections[$this->currentSection] = ob_get_clean();
+        $this->sections[$this->currentSection] = (string) ob_get_clean();
         $this->currentSection = null;
     }
 
@@ -125,15 +125,23 @@ class ViewEngine
     {
         extract($data);
 
+        $obLevel = ob_get_level();
         ob_start();
 
         try {
             include $path;
+
+            return (string) ob_get_clean();
         } catch (\Throwable $e) {
-            ob_end_clean();
+            // Unwind to our starting level: this closes the template's own
+            // buffer *and* any section buffer the template left open when it
+            // threw mid-section (buffers are a stack, so a single
+            // ob_end_clean() would pop the section, not the template).
+            while (ob_get_level() > $obLevel) {
+                ob_end_clean();
+            }
+
             throw $e;
         }
-
-        return ob_get_clean();
     }
 }

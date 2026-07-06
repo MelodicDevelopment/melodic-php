@@ -6,6 +6,13 @@ namespace Melodic\Validation\Rules;
 
 use Attribute;
 
+/**
+ * Comparison is strict (===): the allowed values must match the property's
+ * declared type. Model binding coerces wire input to that type before
+ * validation runs, so `#[In([1, 2])]` on an int property matches "1" from
+ * the client — but on an untyped/mixed property, "1" !== 1 and would fail.
+ * Type the property or list values of the matching type.
+ */
 #[Attribute(Attribute::TARGET_PROPERTY)]
 class In
 {

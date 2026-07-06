@@ -90,6 +90,13 @@ class TestProvider extends ServiceProvider
     }
 }
 
+class ClassWithOptionalDependency
+{
+    public function __construct(
+        public readonly ?TestServiceInterface $service = null
+    ) {}
+}
+
 // --- Tests ---
 
 class ContainerTest extends TestCase
@@ -365,5 +372,61 @@ class ContainerTest extends TestCase
         });
 
         $this->assertSame('second', $this->container->get(SimpleClass::class)->value);
+    }
+
+    // -------------------------------------------------------
+    // Error propagation vs default fallback
+    // -------------------------------------------------------
+
+    public function testThrowingFactoryPropagatesInsteadOfDefaulting(): void
+    {
+        $this->container->bind(TestServiceInterface::class, function (): TestServiceImplementation {
+            throw new RuntimeException('database is down');
+        });
+
+        // Previously the factory's exception was swallowed and $service
+        // silently became its default (null).
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('database is down');
+
+        $this->container->get(ClassWithOptionalDependency::class);
+    }
+
+    public function testUnboundInterfaceStillFallsBackToDefault(): void
+    {
+        $resolved = $this->container->get(ClassWithOptionalDependency::class);
+
+        $this->assertNull($resolved->service);
+    }
+
+    public function testCircularDependencyIsNeverMaskedByDefaults(): void
+    {
+        $this->expectException(\Melodic\DI\CircularDependencyException::class);
+
+        $this->container->get(CircularA::class);
+    }
+
+    // -------------------------------------------------------
+    // singleton(Interface, Concrete) aliases the concrete class
+    // -------------------------------------------------------
+
+    public function testSingletonByConcreteSharesInstanceWithDirectHint(): void
+    {
+        $this->container->singleton(TestServiceInterface::class, TestServiceImplementation::class);
+
+        $viaInterface = $this->container->get(TestServiceInterface::class);
+        $viaConcrete = $this->container->get(TestServiceImplementation::class);
+
+        $this->assertSame($viaInterface, $viaConcrete);
+    }
+
+    public function testSingletonAliasDoesNotOverrideExplicitConcreteBinding(): void
+    {
+        $dedicated = new TestServiceImplementation();
+        $this->container->bind(TestServiceImplementation::class, fn() => $dedicated);
+
+        $this->container->singleton(TestServiceInterface::class, TestServiceImplementation::class);
+
+        $this->assertSame($dedicated, $this->container->get(TestServiceImplementation::class));
     }
 }

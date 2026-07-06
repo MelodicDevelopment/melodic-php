@@ -91,7 +91,17 @@ class RoutingMiddleware implements MiddlewareInterface
                     // Route params matched by name take priority
                     if (array_key_exists($name, $this->params))
                     {
-                        $args[] = $this->params[$name];
+                        try
+                        {
+                            $args[] = $this->coerceRouteParam($param, $this->params[$name]);
+                        }
+                        catch (ModelBindingException $e)
+                        {
+                            // A non-numeric id for `show(int $id)` is a client
+                            // error (400), not an uncaught TypeError (500).
+                            return new JsonResponse([$e->field => [$e->getMessage()]], 400);
+                        }
+
                         continue;
                     }
 
@@ -158,6 +168,60 @@ class RoutingMiddleware implements MiddlewareInterface
                 }
 
                 return $args;
+            }
+
+            /**
+             * Coerce a captured route param (always a string) to the action
+             * parameter's declared type so `show(int $id)` works under
+             * strict_types. Uncoercible input throws ModelBindingException,
+             * which the caller turns into a 400.
+             */
+            private function coerceRouteParam(\ReflectionParameter $param, string $value): mixed
+            {
+                $type = $param->getType();
+
+                if (!$type instanceof ReflectionNamedType)
+                {
+                    return $value;
+                }
+
+                if (!$type->isBuiltin())
+                {
+                    return $this->coerceEnumParam($type->getName(), $param->getName(), $value);
+                }
+
+                $name = $param->getName();
+
+                return match ($type->getName()) {
+                    'int' => preg_match('/^-?\d+$/', $value) === 1
+                        ? (int) $value
+                        : throw new ModelBindingException($name, "Route parameter '{$name}' must be an integer."),
+                    'float' => is_numeric($value)
+                        ? (float) $value
+                        : throw new ModelBindingException($name, "Route parameter '{$name}' must be a number."),
+                    'bool' => match (strtolower($value)) {
+                        '1', 'true' => true,
+                        '0', 'false' => false,
+                        default => throw new ModelBindingException($name, "Route parameter '{$name}' must be a boolean."),
+                    },
+                    default => $value,
+                };
+            }
+
+            private function coerceEnumParam(string $class, string $name, string $value): mixed
+            {
+                if (!is_subclass_of($class, \BackedEnum::class))
+                {
+                    return $value;
+                }
+
+                $backingType = (string) (new \ReflectionEnum($class))->getBackingType();
+                $case = $backingType === 'int'
+                    ? (preg_match('/^-?\d+$/', $value) === 1 ? $class::tryFrom((int) $value) : null)
+                    : $class::tryFrom($value);
+
+                return $case
+                    ?? throw new ModelBindingException($name, "Route parameter '{$name}' is not one of the allowed values.");
             }
         };
 

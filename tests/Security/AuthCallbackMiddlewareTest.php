@@ -12,7 +12,10 @@ use Melodic\Http\Response;
 use Melodic\Security\AuthCallbackMiddleware;
 use Melodic\Security\AuthConfig;
 use Melodic\Security\AuthLoginRendererInterface;
+use Melodic\Security\AuthProviderInterface;
 use Melodic\Security\AuthProviderRegistry;
+use Melodic\Security\AuthProviderType;
+use Melodic\Security\AuthResult;
 use Melodic\Security\SessionManager;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
@@ -31,6 +34,34 @@ class StubPassThroughHandler implements RequestHandlerInterface
     public function handle(Request $request): Response
     {
         return new Response(200, 'passthrough');
+    }
+}
+
+class StubOAuthProvider implements AuthProviderInterface
+{
+    public function getName(): string
+    {
+        return 'stub';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Stub';
+    }
+
+    public function getType(): AuthProviderType
+    {
+        return AuthProviderType::OAuth2;
+    }
+
+    public function handleLogin(Request $request, SessionManager $session): Response
+    {
+        return new Response(302);
+    }
+
+    public function handleCallback(Request $request, SessionManager $session): AuthResult
+    {
+        return new AuthResult('token', [], 'stub');
     }
 }
 
@@ -79,5 +110,49 @@ class AuthCallbackMiddlewareTest extends TestCase
         } catch (HttpException $e) {
             $this->assertSame(403, $e->getStatusCode());
         }
+    }
+
+    private function middlewareWithStubProvider(SessionManager $session): AuthCallbackMiddleware
+    {
+        $registry = new AuthProviderRegistry();
+        $registry->register(new StubOAuthProvider());
+
+        return new AuthCallbackMiddleware(
+            new AuthConfig(),
+            $registry,
+            $session,
+            new StubLoginRenderer(),
+        );
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testCallbackHonorsSafeStoredRedirectPath(): void
+    {
+        $session = new SessionManager(cookieSecure: false);
+        $session->set('melodic_redirect_after_login', '/dashboard');
+
+        $response = $this->middlewareWithStubProvider($session)->process(
+            $this->request('GET', '/auth/callback/stub'),
+            new StubPassThroughHandler(),
+        );
+
+        $this->assertSame('/dashboard', $response->getHeaders()['Location']);
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testCallbackFallsBackWhenStoredRedirectIsOffSite(): void
+    {
+        $session = new SessionManager(cookieSecure: false);
+        // Browsers normalize "/\evil.com" in a Location header to "//evil.com".
+        $session->set('melodic_redirect_after_login', '/\\evil.com');
+
+        $response = $this->middlewareWithStubProvider($session)->process(
+            $this->request('GET', '/auth/callback/stub'),
+            new StubPassThroughHandler(),
+        );
+
+        $this->assertSame('/', $response->getHeaders()['Location']);
     }
 }

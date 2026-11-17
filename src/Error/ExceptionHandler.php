@@ -11,6 +11,8 @@ use Melodic\Http\Request;
 use Melodic\Http\Response;
 use Melodic\Log\LoggerInterface;
 use Melodic\Security\SecurityException;
+use Melodic\Data\ModelBindingException;
+use Melodic\Validation\ValidationException;
 
 class ExceptionHandler
 {
@@ -42,14 +44,26 @@ class ExceptionHandler
 
     public function handle(\Throwable $exception, Request $request): Response
     {
+        foreach ($this->mappers as $class => $mapper) {
+            if (is_a($exception, $class)) {
+                $response = $mapper($exception, $request);
+
+                // Log with the status the mapper chose — a domain exception
+                // mapped to 409 is a client error, not a "Server error" 500.
+                $this->logException($exception, $response->getStatusCode(), $request);
+
+                return $response;
+            }
+        }
+
         $statusCode = $this->resolveStatusCode($exception);
 
         $this->logException($exception, $statusCode, $request);
 
-        foreach ($this->mappers as $class => $mapper) {
-            if (is_a($exception, $class)) {
-                return $mapper($exception, $request);
-            }
+        // A ValidationException thrown by application code gets the same
+        // body shape as automatic model-binding validation failures.
+        if ($exception instanceof ValidationException) {
+            return new JsonResponse($exception->result->errors, $statusCode);
         }
 
         $message = $this->resolveMessage($exception, $statusCode);
@@ -72,6 +86,7 @@ class ExceptionHandler
             $e instanceof HttpException => $e->getStatusCode(),
             $e instanceof SecurityException => 401,
             $e instanceof \JsonException => 400,
+            $e instanceof ValidationException, $e instanceof ModelBindingException => 400,
             default => 500,
         };
     }
@@ -103,8 +118,13 @@ class ExceptionHandler
             403 => 'Forbidden',
             404 => 'Not Found',
             405 => 'Method Not Allowed',
+            409 => 'Conflict',
+            419 => 'Page Expired',
             422 => 'Unprocessable Entity',
+            429 => 'Too Many Requests',
             500 => 'Internal Server Error',
+            501 => 'Not Implemented',
+            503 => 'Service Unavailable',
             default => 'Error',
         };
     }
@@ -112,16 +132,24 @@ class ExceptionHandler
     private function logException(\Throwable $e, int $statusCode, Request $request): void
     {
         $context = [
-            'exception' => $e,
             'status' => $statusCode,
             'method' => $request->method()->value,
             'path' => $request->path(),
         ];
 
+        if ($statusCode >= 500 || $this->debug) {
+            // Full exception (stack trace) for server errors.
+            $context['exception'] = $e;
+        }
+
         if ($statusCode >= 500) {
             $this->logger->error('Server error: {method} {path} [{status}]', $context);
         } else {
-            $this->logger->warning('Client error: {method} {path} [{status}]', $context);
+            // Client errors (404s from crawlers, validation failures, ...) are
+            // routine: one line with the reason, no stack trace, so they
+            // cannot flood the log.
+            $context['reason'] = get_class($e) . ': ' . $e->getMessage();
+            $this->logger->warning('Client error: {method} {path} [{status}] {reason}', $context);
         }
     }
 

@@ -51,7 +51,17 @@ class Model implements \JsonSerializable
                     continue;
                 }
 
-                $property->setValue($instance, self::coerceValue($property, $value, $key));
+                $coerced = self::coerceValue($property, $value, (string) $key);
+
+                try {
+                    $property->setValue($instance, $coerced);
+                } catch (\TypeError) {
+                    // Safety net for anything coerceValue passes through
+                    // (union types, unknown classes): a wire value of the
+                    // wrong shape is a client error (400), never a 500.
+                    throw new ModelBindingException((string) $key, "Field '{$key}' has an invalid type.");
+                }
+
                 $instance->_providedKeys[$propertyName] = true;
             }
         }
@@ -101,8 +111,35 @@ class Model implements \JsonSerializable
             'float' => self::toFloat($value, $field),
             'bool' => self::toBool($value, $field),
             'string' => self::toString($value, $field),
-            default => $value, // array, object, mixed, iterable — no coercion
+            'array' => self::toArrayValue($property, $value, $field),
+            default => $value, // object, mixed, iterable — no coercion
         };
+    }
+
+    /**
+     * @return array<mixed>
+     */
+    private static function toArrayValue(ReflectionProperty $property, mixed $value, string $field): array
+    {
+        if (!is_array($value)) {
+            throw new ModelBindingException($field, "Field '{$field}' must be an array.");
+        }
+
+        $listOf = $property->getAttributes(ListOf::class)[0] ?? null;
+
+        if ($listOf === null) {
+            return $value;
+        }
+
+        // #[ListOf(Foo::class)]: hydrate each element into a model.
+        $class = $listOf->newInstance()->class;
+        $items = [];
+
+        foreach ($value as $index => $item) {
+            $items[$index] = self::toObject($class, $item, $field . '.' . $index);
+        }
+
+        return $items;
     }
 
     private static function toObject(string $class, mixed $value, string $field): mixed
@@ -113,6 +150,23 @@ class Model implements \JsonSerializable
 
         if (is_subclass_of($class, \BackedEnum::class)) {
             return self::toEnum($class, $value, $field);
+        }
+
+        // Nested model: hydrate from a JSON object. Binding errors are
+        // reported with a dotted path (e.g. "address.city").
+        if (is_a($class, self::class, true)) {
+            if (!is_array($value)) {
+                throw new ModelBindingException($field, "Field '{$field}' must be an object.");
+            }
+
+            try {
+                return $class::fromArray($value);
+            } catch (ModelBindingException $e) {
+                throw new ModelBindingException(
+                    $field . '.' . $e->field,
+                    str_replace("'{$e->field}'", "'{$field}.{$e->field}'", $e->getMessage()),
+                );
+            }
         }
 
         if (in_array($class, [\DateTimeImmutable::class, \DateTimeInterface::class, \DateTime::class], true)) {
@@ -162,10 +216,19 @@ class Model implements \JsonSerializable
         }
 
         if (is_string($value) && preg_match('/^-?\d+$/', $value) === 1) {
-            return (int) $value;
+            // An (int) cast silently clamps digits that overflow PHP_INT_MAX;
+            // FILTER_VALIDATE_INT rejects them (it also rejects leading
+            // zeros, so those are stripped first).
+            $negative = $value[0] === '-';
+            $digits = ltrim($negative ? substr($value, 1) : $value, '0');
+            $number = filter_var(($negative ? '-' : '') . ($digits === '' ? '0' : $digits), FILTER_VALIDATE_INT);
+
+            if ($number !== false) {
+                return $number;
+            }
         }
 
-        if (is_float($value) && floor($value) === $value) {
+        if (is_float($value) && floor($value) === $value && abs($value) < (float) PHP_INT_MAX) {
             return (int) $value;
         }
 
@@ -245,7 +308,8 @@ class Model implements \JsonSerializable
 
     /**
      * Return all initialized properties with PascalCase keys.
-     * Booleans are converted to ints for PDO compatibility.
+     * Booleans are converted to ints, backed enums to their backing value, and
+     * date/time objects to "Y-m-d H:i:s" strings for PDO compatibility.
      *
      * @return array<string, mixed>
      */
@@ -257,8 +321,7 @@ class Model implements \JsonSerializable
 
         foreach ($properties as $property) {
             if ($property->isInitialized($this)) {
-                $value = $property->getValue($this);
-                $result[$property->getName()] = is_bool($value) ? (int) $value : $value;
+                $result[$property->getName()] = self::toDatabaseValue($property->getValue($this));
             }
         }
 
@@ -270,8 +333,8 @@ class Model implements \JsonSerializable
      * Used for partial updates where absent means "not provided" and null means
      * "clear this field" (per RFC 7396 JSON Merge Patch). Properties assigned
      * programmatically after fromArray are NOT tracked — fields_set reflects the
-     * wire, not subsequent mutation. Booleans are converted to ints for PDO
-     * compatibility.
+     * wire, not subsequent mutation. Values are converted for PDO the same way
+     * as toPascalArray().
      *
      * @return array<string, mixed>
      */
@@ -281,8 +344,7 @@ class Model implements \JsonSerializable
         $result = [];
 
         foreach (array_keys($this->_providedKeys) as $propertyName) {
-            $value = $reflector->getProperty($propertyName)->getValue($this);
-            $result[$propertyName] = is_bool($value) ? (int) $value : $value;
+            $result[$propertyName] = self::toDatabaseValue($reflector->getProperty($propertyName)->getValue($this));
         }
 
         return $result;
@@ -297,8 +359,34 @@ class Model implements \JsonSerializable
         return isset($this->_providedKeys[$key]);
     }
 
+    /**
+     * JSON form of the model: toArray() with date/time values rendered as
+     * ISO-8601 strings (json_encode would otherwise emit PHP's internal
+     * {date, timezone_type, timezone} object). Backed enums serialize to their
+     * backing value natively.
+     */
     public function jsonSerialize(): mixed
     {
-        return $this->toArray();
+        return array_map(
+            static fn(mixed $value): mixed => $value instanceof \DateTimeInterface
+                ? $value->format(\DateTimeInterface::ATOM)
+                : $value,
+            $this->toArray(),
+        );
+    }
+
+    /**
+     * Convert a property value to something PDO can bind: booleans become
+     * ints, backed enums their backing value, and date/time objects a
+     * "Y-m-d H:i:s" string.
+     */
+    private static function toDatabaseValue(mixed $value): mixed
+    {
+        return match (true) {
+            is_bool($value) => (int) $value,
+            $value instanceof \BackedEnum => $value->value,
+            $value instanceof \DateTimeInterface => $value->format('Y-m-d H:i:s'),
+            default => $value,
+        };
     }
 }

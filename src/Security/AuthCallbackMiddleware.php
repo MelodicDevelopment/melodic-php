@@ -15,6 +15,8 @@ use Melodic\Http\Response;
 
 class AuthCallbackMiddleware implements MiddlewareInterface
 {
+    private const LOGIN_ERROR_KEY = 'melodic_login_error';
+
     private readonly CsrfToken $csrf;
 
     public function __construct(
@@ -22,6 +24,7 @@ class AuthCallbackMiddleware implements MiddlewareInterface
         private readonly AuthProviderRegistry $registry,
         private readonly SessionManager $session,
         private readonly AuthLoginRendererInterface $loginRenderer,
+        private readonly ?RefreshTokenConfig $refreshTokenConfig = null,
     ) {
         $this->csrf = new CsrfToken($this->session);
     }
@@ -37,7 +40,8 @@ class AuthCallbackMiddleware implements MiddlewareInterface
         }
 
         // GET /auth/login — show login page with all providers
-        if ($path === $this->config->loginPath) {
+        // (with or without a trailing slash — "/auth/login/" is not a provider)
+        if ($path === $this->config->loginPath || $path === rtrim($this->config->loginPath, '/') . '/') {
             return $this->handleLoginPage($request);
         }
 
@@ -60,7 +64,20 @@ class AuthCallbackMiddleware implements MiddlewareInterface
 
     private function handleLoginPage(Request $request): Response
     {
-        $error = $request->query('error');
+        // The message is read from the session, never from the URL: a
+        // message taken from `?error=...` would let anyone craft a link that
+        // shows arbitrary text on the real login page (phishing). The query
+        // parameter is only a flag.
+        $error = null;
+
+        if ($request->query('error') !== null) {
+            $stored = $this->session->get(self::LOGIN_ERROR_KEY);
+            $this->session->remove(self::LOGIN_ERROR_KEY);
+            $error = is_string($stored) && $stored !== ''
+                ? $stored
+                : 'Sign-in failed. Please try again.';
+        }
+
         $csrfToken = $this->csrf->getToken();
         $html = $this->loginRenderer->render($error, $csrfToken);
 
@@ -95,16 +112,14 @@ class AuthCallbackMiddleware implements MiddlewareInterface
             $submittedToken = (string) $request->body('csrf_token', '');
 
             if ($submittedToken === '' || !$this->csrf->validate($submittedToken)) {
-                $errorMessage = urlencode('Invalid or expired form submission. Please try again.');
-                return new RedirectResponse("{$this->config->loginPath}?error={$errorMessage}");
+                return $this->loginErrorRedirect('Invalid or expired form submission. Please try again.');
             }
         }
 
         try {
             $result = $provider->handleCallback($request, $this->session);
         } catch (SecurityException $e) {
-            $errorMessage = urlencode($e->getMessage());
-            return new RedirectResponse("{$this->config->loginPath}?error={$errorMessage}");
+            return $this->loginErrorRedirect($e->getMessage());
         }
 
         // Regenerate session ID after successful authentication to prevent session
@@ -118,7 +133,7 @@ class AuthCallbackMiddleware implements MiddlewareInterface
         // Defense-in-depth against open redirects: even if the stored value was
         // tampered with, only local paths are honored; anything else falls back
         // to the author-configured post-login target.
-        if (!SafeRedirect::isSafePath($redirectTo)) {
+        if (!RedirectResponse::isLocalPath($redirectTo)) {
             $redirectTo = $this->config->postLoginRedirect;
         }
 
@@ -142,11 +157,30 @@ class AuthCallbackMiddleware implements MiddlewareInterface
             throw HttpException::forbidden('Invalid or expired logout request.');
         }
 
+        // End the server-side session too, not just the auth cookie —
+        // otherwise session data (and the session id) outlives the logout.
+        $this->session->destroy();
+
         $response = new RedirectResponse('/');
+
+        // Drop the refresh-token cookie as well when refresh tokens are in
+        // use. (Revoking the stored token family is the application's job —
+        // call RefreshTokenService::revokeAllForUser() from a logout hook.)
+        if ($this->refreshTokenConfig !== null) {
+            $response = RefreshTokenCookieHelper::clear($response, $this->refreshTokenConfig);
+        }
 
         // Clear with the same attributes the cookie was set with — otherwise the
         // browser keeps the original cookie.
         return $response->withCookie($this->config->cookieName, '', $this->cookieOptions(time() - 3600));
+    }
+
+    /** Stash the message in the session and bounce back to the login page. */
+    private function loginErrorRedirect(string $message): Response
+    {
+        $this->session->set(self::LOGIN_ERROR_KEY, $message);
+
+        return new RedirectResponse("{$this->config->loginPath}?error=1");
     }
 
     /**

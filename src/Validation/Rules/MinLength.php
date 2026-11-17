@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Melodic\Validation\Rules;
 
 use Attribute;
+use Melodic\Validation\RuleInterface;
 
 #[Attribute(Attribute::TARGET_PROPERTY)]
-class MinLength
+class MinLength implements RuleInterface
 {
     public readonly string $message;
 
@@ -29,6 +30,9 @@ class MinLength
             return false;
         }
 
-        return mb_strlen($value) >= $this->min;
+        // Count characters when mbstring is available (it is optional).
+        $length = function_exists('mb_strlen') ? mb_strlen($value) : strlen($value);
+
+        return $length >= $this->min;
     }
 }

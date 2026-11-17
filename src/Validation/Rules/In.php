@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Melodic\Validation\Rules;
 
 use Attribute;
+use Melodic\Validation\RuleInterface;
 
 /**
  * Comparison is strict (===): the allowed values must match the property's
@@ -14,7 +15,7 @@ use Attribute;
  * Type the property or list values of the matching type.
  */
 #[Attribute(Attribute::TARGET_PROPERTY)]
-class In
+class In implements RuleInterface
 {
     public readonly string $message;
 

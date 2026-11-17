@@ -46,7 +46,9 @@ class NativeSessionTest extends TestCase
             . '; echo function_exists("xdebug_get_headers") ? implode("\n", xdebug_get_headers()) : "NO_XDEBUG";';
 
         $output = (string) shell_exec(
-            escapeshellarg(PHP_BINARY)
+            // The XDEBUG_MODE env var overrides the -d setting below, so pin it
+            // too (otherwise XDEBUG_MODE=off makes xdebug_get_headers() return nothing).
+            'XDEBUG_MODE=develop ' . escapeshellarg(PHP_BINARY)
             . ' -d xdebug.mode=develop -d xdebug.start_with_request=no -r '
             . escapeshellarg($script) . ' 2>/dev/null',
         );

@@ -4,25 +4,24 @@ declare(strict_types=1);
 
 namespace Melodic\Validation;
 
+use Melodic\Data\Model;
 use ReflectionClass;
 use ReflectionProperty;
 
 class Validator
 {
+    /**
+     * Rule instances per class and property, built once — rule attributes are
+     * immutable, so re-reflecting and re-instantiating them on every
+     * validation was wasted work.
+     *
+     * @var array<class-string, array<string, array{property: ReflectionProperty, rules: object[]}>>
+     */
+    private array $ruleCache = [];
+
     public function validate(object $dto): ValidationResult
     {
-        $reflector = new ReflectionClass($dto);
-        $errors = [];
-
-        foreach ($reflector->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
-            $fieldName = $property->getName();
-            $value = $property->isInitialized($dto) ? $property->getValue($dto) : null;
-
-            $fieldErrors = $this->validateProperty($property, $value);
-            if ($fieldErrors !== []) {
-                $errors[$fieldName] = $fieldErrors;
-            }
-        }
+        $errors = $this->collectErrors($dto, '');
 
         return $errors === []
             ? ValidationResult::success()
@@ -35,14 +34,12 @@ class Validator
      */
     public function validateArray(array $data, string $dtoClass): ValidationResult
     {
-        $reflector = new ReflectionClass($dtoClass);
         $errors = [];
 
-        foreach ($reflector->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
-            $fieldName = $property->getName();
+        foreach ($this->rulesFor($dtoClass) as $fieldName => $entry) {
             $value = array_key_exists($fieldName, $data) ? $data[$fieldName] : null;
 
-            $fieldErrors = $this->validateProperty($property, $value);
+            $fieldErrors = $this->applyRules($entry['rules'], $value);
             if ($fieldErrors !== []) {
                 $errors[$fieldName] = $fieldErrors;
             }
@@ -54,17 +51,86 @@ class Validator
     }
 
     /**
-     * @return string[]
+     * Validate an object and, recursively, any nested Model (or list of
+     * Models) it holds. Nested errors are keyed with a dotted path, e.g.
+     * "Address.City" or "Lines.0.Quantity".
+     *
+     * @return array<string, string[]>
      */
-    private function validateProperty(ReflectionProperty $property, mixed $value): array
+    private function collectErrors(object $dto, string $prefix): array
     {
         $errors = [];
 
-        foreach ($property->getAttributes() as $attribute) {
-            $instance = $attribute->newInstance();
+        foreach ($this->rulesFor($dto::class) as $fieldName => $entry) {
+            $property = $entry['property'];
+            $value = $property->isInitialized($dto) ? $property->getValue($dto) : null;
 
-            if (method_exists($instance, 'validate') && !$instance->validate($value)) {
-                $errors[] = $instance->message;
+            $fieldErrors = $this->applyRules($entry['rules'], $value);
+            if ($fieldErrors !== []) {
+                $errors[$prefix . $fieldName] = $fieldErrors;
+            }
+
+            if ($value instanceof Model) {
+                $errors += $this->collectErrors($value, $prefix . $fieldName . '.');
+            } elseif (is_array($value)) {
+                foreach ($value as $index => $item) {
+                    if ($item instanceof Model) {
+                        $errors += $this->collectErrors($item, $prefix . $fieldName . '.' . $index . '.');
+                    }
+                }
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * @param class-string $class
+     * @return array<string, array{property: ReflectionProperty, rules: object[]}>
+     */
+    private function rulesFor(string $class): array
+    {
+        if (!isset($this->ruleCache[$class])) {
+            $entries = [];
+
+            foreach ((new ReflectionClass($class))->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
+                if ($property->isStatic()) {
+                    continue;
+                }
+
+                $rules = [];
+
+                foreach ($property->getAttributes() as $attribute) {
+                    // Only instantiate attributes that can be rules: anything
+                    // implementing RuleInterface, or (for backwards
+                    // compatibility) any attribute class with a validate() method.
+                    $name = $attribute->getName();
+
+                    if (class_exists($name) && (is_a($name, RuleInterface::class, true) || method_exists($name, 'validate'))) {
+                        $rules[] = $attribute->newInstance();
+                    }
+                }
+
+                $entries[$property->getName()] = ['property' => $property, 'rules' => $rules];
+            }
+
+            $this->ruleCache[$class] = $entries;
+        }
+
+        return $this->ruleCache[$class];
+    }
+
+    /**
+     * @param object[] $rules
+     * @return string[]
+     */
+    private function applyRules(array $rules, mixed $value): array
+    {
+        $errors = [];
+
+        foreach ($rules as $rule) {
+            if (!$rule->validate($value)) {
+                $errors[] = property_exists($rule, 'message') ? (string) $rule->message : 'Invalid value';
             }
         }
 

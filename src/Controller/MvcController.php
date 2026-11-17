@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Melodic\Controller;
 
+use Melodic\Http\RedirectResponse;
 use Melodic\Http\Response;
-use Melodic\Security\UserContextInterface;
 use Melodic\View\ViewBag;
 use Melodic\View\ViewEngine;
 
@@ -24,6 +24,16 @@ class MvcController extends Controller
     protected function view(string $template, array $data = []): Response
     {
         $data['viewBag'] = $this->viewBag;
+
+        // With CsrfMiddleware active, templates get `$csrfToken` and a ready
+        // hidden input as `$csrfField` (never overriding caller-supplied data).
+        $csrfToken = isset($this->request) ? $this->csrfToken() : null;
+
+        if ($csrfToken !== null) {
+            $data['csrfToken'] ??= $csrfToken;
+            $data['csrfField'] ??= '<input type="hidden" name="csrf_token" value="'
+                . htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') . '">';
+        }
 
         $html = $this->viewEngine->render($template, $data, $this->layout);
 
@@ -44,8 +54,16 @@ class MvcController extends Controller
         $this->layout = $layout;
     }
 
-    protected function getUserContext(): ?UserContextInterface
+    /** The CSRF token for this request (set by CsrfMiddleware), if any. */
+    protected function csrfToken(): ?string
     {
-        return $this->request->getAttribute('userContext');
+        $token = $this->request->getAttribute('csrfToken');
+
+        return is_string($token) ? $token : null;
+    }
+
+    protected function redirect(string $url, int $statusCode = 302): RedirectResponse
+    {
+        return new RedirectResponse($url, $statusCode);
     }
 }

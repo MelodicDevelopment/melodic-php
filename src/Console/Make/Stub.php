@@ -40,7 +40,14 @@ class Stub
             return ucfirst($input);
         }
 
-        return implode('', array_map(fn(string $word) => ucfirst(strtolower($word)), $words));
+        // A word that is already mixed-case ("BlogPost") keeps its inner
+        // capitals; all-lower or all-upper words are normalized ("USER" → "User").
+        return implode('', array_map(
+            fn(string $word) => $word === strtolower($word) || $word === strtoupper($word)
+                ? ucfirst(strtolower($word))
+                : ucfirst($word),
+            $words,
+        ));
     }
 
     public static function camelCase(string $input): string

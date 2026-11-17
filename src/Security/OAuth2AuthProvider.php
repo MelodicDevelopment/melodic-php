@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Melodic\Security;
 
-use Firebase\JWT\JWT;
 use Melodic\Http\RedirectResponse;
 use Melodic\Http\Request;
 use Melodic\Http\Response;
@@ -41,7 +40,7 @@ class OAuth2AuthProvider implements AuthProviderInterface
         $session->set("melodic_oauth_state_{$this->config->name}", $state);
         $session->set("melodic_oauth_verifier_{$this->config->name}", $codeVerifier);
 
-        $codeChallenge = rtrim(strtr(base64_encode(hash('sha256', $codeVerifier, true)), '+/', '-_'), '=');
+        $codeChallenge = OAuthClient::codeChallenge($codeVerifier);
 
         $params = [
             // response_type=code is required by the OAuth 2.0 authorization-code
@@ -94,7 +93,7 @@ class OAuth2AuthProvider implements AuthProviderInterface
         $claims = $this->claimMapper->map($rawClaims);
         $claims['provider'] = $this->config->name;
 
-        $token = $this->issueLocalJwt($claims);
+        $token = LocalJwtIssuer::issue($this->localAuthConfig, $claims, $this->config->name);
 
         return new AuthResult(
             token: $token,
@@ -133,25 +132,5 @@ class OAuth2AuthProvider implements AuthProviderInterface
             $this->config->userInfoUrl,
             ['Authorization' => "Bearer {$accessToken}"],
         );
-    }
-
-    /** @param array<string, mixed> $claims */
-    private function issueLocalJwt(array $claims): string
-    {
-        $now = time();
-
-        $payload = [
-            'iss' => $this->localAuthConfig->issuer,
-            'aud' => $this->localAuthConfig->audience,
-            'iat' => $now,
-            'exp' => $now + $this->localAuthConfig->tokenLifetime,
-            'sub' => $claims['sub'] ?? '',
-            'username' => $claims['username'] ?? '',
-            'email' => $claims['email'] ?? '',
-            'entitlements' => $claims['entitlements'] ?? [],
-            'provider' => $claims['provider'] ?? $this->config->name,
-        ];
-
-        return JWT::encode($payload, $this->localAuthConfig->signingKey, $this->localAuthConfig->algorithm);
     }
 }

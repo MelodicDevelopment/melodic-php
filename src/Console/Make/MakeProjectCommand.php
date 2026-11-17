@@ -128,14 +128,16 @@ class MakeProjectCommand extends Command
     }
 
     /**
-     * Caret constraint pinned to the running framework's major version, so a
+     * Caret constraint from the running framework's major.minor version, so a
      * scaffolded project always requires a compatible release.
      */
     private static function frameworkConstraint(): string
     {
-        $major = explode('.', Framework::VERSION)[0];
+        [$major, $minor] = explode('.', Framework::VERSION);
 
-        return '^' . $major . '.0';
+        // Major.minor: scaffolded code may rely on features of the minor
+        // release that generated it (e.g. 4.1's default ViewEngine binding).
+        return '^' . $major . '.' . $minor;
     }
 
     private function createConfig(string $dir): void
@@ -231,10 +233,6 @@ JSON;
     "database": {
         "dsn": "sqlite:storage/database.sqlite"
     },
-    "jwt": {
-        "secret": "change-me",
-        "algorithm": "HS256"
-    },
     "cors": {
         "allowedOrigins": ["*"],
         "allowedMethods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -251,10 +249,6 @@ JSON;
     },
     "database": {
         "dsn": ""
-    },
-    "jwt": {
-        "secret": "",
-        "algorithm": "HS256"
     }
 }
 JSON;
@@ -266,10 +260,6 @@ JSON;
     },
     "database": {
         "dsn": ""
-    },
-    "jwt": {
-        "secret": "",
-        "algorithm": "HS256"
     }
 }
 JSON;
@@ -394,6 +384,20 @@ use Melodic\Console\Console;
 $console = new Console();
 $console->setName('{namespace}');
 
+// Register commands here, e.g. database migrations:
+//
+//   use Melodic\Console\MakeMigrationCommand;
+//   use Melodic\Console\MigrateCommand;
+//   use Melodic\Console\MigrateRollbackCommand;
+//   use Melodic\Console\MigrateStatusCommand;
+//   use Melodic\Data\Migration\Migrator;
+//
+//   $migrator = new Migrator($dbContext, __DIR__ . '/../migrations');
+//   $console->register(new MigrateCommand($migrator));
+//   $console->register(new MigrateRollbackCommand($migrator));
+//   $console->register(new MigrateStatusCommand($migrator));
+//   $console->register(new MakeMigrationCommand(__DIR__ . '/../migrations'));
+
 exit($console->run($argv));
 PHP;
 
@@ -452,7 +456,7 @@ PHP;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($viewBag->title ?? 'App') ?></title>
+    <title><?= $this->e($viewBag->title ?? 'App') ?></title>
     <?= $this->renderSection('head') ?>
 </head>
 <body>
@@ -463,7 +467,7 @@ PHP;
 HTML;
 
     private const HOME_VIEW_STUB = <<<'HTML'
-<h1><?= htmlspecialchars($heading) ?></h1>
+<h1><?= $this->e($heading) ?></h1>
 <p>Your Melodic application is running.</p>
 HTML;
 }

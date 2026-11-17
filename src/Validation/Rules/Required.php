@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Melodic\Validation\Rules;
 
 use Attribute;
+use Melodic\Validation\RuleInterface;
 
 #[Attribute(Attribute::TARGET_PROPERTY)]
-class Required
+class Required implements RuleInterface
 {
     public function __construct(
         public readonly string $message = 'This field is required'

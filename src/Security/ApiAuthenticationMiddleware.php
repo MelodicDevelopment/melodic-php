@@ -9,12 +9,14 @@ use Melodic\Http\Middleware\MiddlewareInterface;
 use Melodic\Http\Middleware\RequestHandlerInterface;
 use Melodic\Http\Request;
 use Melodic\Http\Response;
+use Melodic\Log\LoggerInterface;
 
 class ApiAuthenticationMiddleware implements MiddlewareInterface
 {
     public function __construct(
         private readonly AuthConfig $config,
         private readonly JwtValidator $validator,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -35,7 +37,9 @@ class ApiAuthenticationMiddleware implements MiddlewareInterface
         try {
             $claims = $this->validator->validate($token);
             $userContext = UserContext::fromClaims($claims);
-        } catch (SecurityException) {
+        } catch (SecurityException $e) {
+            $this->logger?->warning('API token rejected: {reason}', ['reason' => $e->getMessage()]);
+
             // Return a generic message — the underlying reason (bad audience,
             // expired token, malformed JWT, ...) is internal detail a client
             // must not see. Let the validator/logging layer record specifics.

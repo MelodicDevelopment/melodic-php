@@ -51,6 +51,15 @@ class Container implements ContainerInterface
         return isset($this->bindings[$id]) || isset($this->instances[$id]) || class_exists($id);
     }
 
+    /**
+     * Whether the id was explicitly registered (bind/singleton/instance) —
+     * unlike has(), which also answers true for any auto-wirable class.
+     */
+    public function isBound(string $id): bool
+    {
+        return isset($this->bindings[$id]) || isset($this->instances[$id]);
+    }
+
     public function bind(string $abstract, string|callable $concrete): void
     {
         $this->bindings[$abstract] = [
@@ -111,7 +120,7 @@ class Container implements ContainerInterface
         }
 
         if (!class_exists($class)) {
-            throw new ContainerException(
+            throw new NotFoundException(
                 "Unable to resolve '{$class}': class does not exist and no binding was registered."
             );
         }

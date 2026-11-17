@@ -46,13 +46,13 @@ abstract class Command implements CommandInterface
         $widths = array_fill(0, $columns, 0);
 
         foreach ($headers as $i => $header) {
-            $widths[$i] = max($widths[$i], mb_strlen($header));
+            $widths[$i] = max($widths[$i], self::length($header));
         }
 
         foreach ($rows as $row) {
             foreach ($row as $i => $cell) {
                 if ($i < $columns) {
-                    $widths[$i] = max($widths[$i], mb_strlen($cell));
+                    $widths[$i] = max($widths[$i], self::length($cell));
                 }
             }
         }
@@ -71,6 +71,12 @@ abstract class Command implements CommandInterface
         }
 
         $this->writeln($separator);
+    }
+
+    /** Character count; mbstring is optional, so fall back to bytes. */
+    private static function length(string $text): int
+    {
+        return function_exists('mb_strlen') ? mb_strlen($text) : strlen($text);
     }
 
     /**

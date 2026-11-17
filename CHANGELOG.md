@@ -4,6 +4,142 @@ All notable changes to the Melodic PHP framework are documented here. The format
 is based on [Keep a Changelog](https://keepachangelog.com/), and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [4.1.0] — Review fixes and parity features
+
+Backwards compatible with 4.0. Nothing was removed; a few leftovers are
+deprecated for removal in 5.0. See "Behavior changes" for the handful of
+fixes that change observable behavior.
+
+### Fixed
+
+- **`ViewEngine`**: templates render in an isolated scope. A view variable
+  named `path` previously replaced the template file being included (and could
+  disclose an arbitrary local file if view data keys came from user input).
+- **Model binding**: nested `Model` properties hydrate from JSON objects; a
+  wrong-shaped value for an `array`, nested-model, or union-typed property is
+  a **400** instead of an uncaught `TypeError` (500); integer strings that
+  overflow `PHP_INT_MAX` are rejected instead of silently clamped.
+- **Enums / dates round-trip**: `toPascalArray()` / `toUpdateArray()` convert
+  backed enums to their value and `DateTime` objects to `Y-m-d H:i:s` (PDO
+  cannot bind objects); JSON output renders `DateTime` as ISO-8601.
+- **`DbContext`** normalizes parameters: `false` binds as `0` (was `''`, which
+  strict MySQL rejects), enums and dates bind as scalars.
+- **Routing**: captured route parameters are URL-decoded; a trailing slash
+  matches the same route (`/users/` ≡ `/users`).
+- **`Request`**: a request target starting with `//` no longer loses its first
+  path segment; `Bearer` scheme matching is case-insensitive.
+- **Unsupported HTTP methods** (`PROPFIND`, …) get a clean **501** instead of
+  an uncaught `ValueError`.
+- **Scaffolding**: `make:project` MVC/full projects work out of the box —
+  `Application` now binds a default `ViewEngine` (`{basePath}/views`, or the
+  `views.path` config key). Stubs no longer emit an unused `jwt` config block,
+  and views use `$this->e()`.
+- **`WebAuthenticationMiddleware`**: a `SecurityException` thrown by the
+  application is no longer swallowed and turned into a login redirect; the
+  post-login target keeps its query string.
+- **`AuthorizationMiddleware`** can be used as a route middleware with
+  per-route requirements: `attributes: ['entitlements' => ['admin']]`.
+- **`CorsMiddleware`** appends to an existing `Vary` header instead of
+  replacing it, and sends `Vary: Origin` for disallowed origins too.
+- **Refresh tokens**: reuse detection survives the transaction —
+  `validateAndRotate()` re-applies the family revocation after the rollback
+  its own exception causes (`RefreshTokenReuseException`).
+- **`OAuthClient`** sends a `User-Agent` (GitHub's API rejects requests
+  without one).
+- **`ExceptionHandler`** logs a mapped exception with the status its mapper
+  returned instead of as a 500.
+- **`make:entity`** keeps inner capitals (`BlogPost` no longer becomes
+  `Blogpost`) and generates a camelCase list variable; `make:project` requires
+  the generating framework's minor version (`^4.1`).
+- `mbstring` is optional again (`#[MinLength]`/`#[MaxLength]` and console
+  tables fall back to byte length).
+- Array-valued `?error[]=` / refresh-token cookie no longer cause a 500.
+- **`SessionServiceProvider`** honors the `session.cookie*` config keys.
+- **`SecurityServiceProvider`** passes the bound `DbContext` to
+  `RefreshTokenService` (so `validateAndRotate()` is actually transactional)
+  and the bound logger to `RefreshTokenMiddleware`.
+
+### Security
+
+- **`CsrfMiddleware`** (new): CSRF protection for all cookie-authenticated
+  state-changing requests, with a per-session token (`csrf_token` field or
+  `X-CSRF-Token` header). `MvcController` passes `$csrfToken` / `$csrfField`
+  to views. API paths and bearer-token requests are exempt.
+- **`RateLimitMiddleware`** (new): cache-backed fixed-window limiter with
+  `Retry-After` / `X-RateLimit-*` headers — e.g. throttle local login.
+- **`SecurityHeadersMiddleware`** (new): `nosniff`, frame options, referrer
+  policy, optional HSTS / CSP / Permissions-Policy.
+- **Sessions** start with `session.use_strict_mode` and `use_only_cookies`
+  enabled (attacker-supplied session ids are no longer adopted).
+- **Login page**: the error text is read from the session, never from the
+  `?error=` URL parameter (prevented arbitrary text on the real login page).
+- **Logout** also destroys the server-side session and clears the refresh
+  cookie.
+- **OIDC cache**: an existing cache directory under the system temp dir must
+  be owned by the current user and is tightened to `0700`; files are written
+  atomically with `0600`.
+- **`UserContext::fromClaims()`** coerces unexpected claim shapes instead of
+  raising a `TypeError`.
+
+### Added
+
+- **`Application::handle(Request): Response`** and `boot()` — run a request
+  without sending output (tests, long-running runtimes).
+- **`Request`**: `ip()`, `host()`, `scheme()`, `isSecure()`, `queryString()`,
+  `uri()`, `server()`, `file()`, `attributes()`, `isJson()`, `wantsJson()`.
+- **`Response`**: `getHeader()`, `withoutHeader()`.
+- **Routing**: parameter constraints (`{id:\d+}`), named routes with
+  `Router::url()`, `PATCH` in `apiResource()`, and `#[FromQuery]` to bind a
+  model from the query string.
+- **Validation**: `RuleInterface`; `#[Url]`, `#[Uuid]`, `#[Date]` rules;
+  nested models (and lists of models) are validated with dotted error keys.
+- **Database**: plain-SQL migrations (`Migrator`, `migrate`,
+  `migrate:rollback`, `migrate:status`, `make:migration`), `Paginator` /
+  `PaginatedResult`, and `DbContext::cursor()` for streaming large results.
+- **Configuration**: `${ENV_VAR}` / `${ENV_VAR:-default}` placeholders.
+- **`app.errorsAsExceptions`** (opt-in): convert PHP warnings/notices to
+  exceptions.
+- **OIDC**: `claimMap` is applied to OIDC providers (e.g. Entra `roles` →
+  entitlements); the key set is refetched when a token names an unknown key
+  id (key rotation); a stale discovery/JWKS document is served when the
+  provider is unreachable.
+- **Logging**: `logging.maxFiles` retention; client errors (4xx) are logged
+  as one line without a stack trace.
+- **Views**: `$this->partial()`; `MvcController::redirect()`.
+- **PSR interop**: the container implements PSR-11 (`psr/container` is now a
+  dependency); `PsrLoggerAdapter` and `Psr16CacheAdapter` plug any PSR-3
+  logger or PSR-16 cache into the framework.
+- `Container::isBound()`; `claude:install` points projects at
+  `MELODIC_PHP.md`.
+
+- **Model binding**: `#[ListOf(Foo::class)]` hydrates (and validates) lists
+  of nested models.
+- **`ResponseDecoratorInterface`**: CORS and security headers are now also
+  applied to error responses (router 404/405, thrown `HttpException`s), which
+  previously carried none — cross-origin clients could not read error bodies.
+- `ValidationException` thrown by application code maps to **400** with the
+  same body as automatic validation failures.
+- `ApiAuthenticationMiddleware` logs why a token was rejected (when a logger
+  is bound); `UserContext::getProvider()` is populated for OIDC users.
+
+### Behavior changes to be aware of
+
+- `apiResource()` registers a sixth route (`PATCH {path}/{id}` → `update`).
+- Route parameters arrive URL-decoded (`John%20Doe` → `John Doe`).
+- `json_encode($model)` renders `DateTime` properties as ISO-8601 strings
+  (`toArray()` still returns the objects).
+- 4xx log lines no longer include a stack trace (unless `app.debug` is on).
+- Failed logins redirect to `{loginPath}?error=1`; custom login renderers
+  still receive the message text.
+- `AuthorizationMiddleware` enforces a route's `entitlements` attribute.
+
+### Deprecated (removal in 5.0)
+
+- `Security\SafeRedirect` — use `RedirectResponse::isLocalPath()`.
+- `Utilities::kill()`.
+- `OAuthClient` instance methods (`getAuthorizationUrl()`, `exchangeCode()`);
+  the static helpers stay.
+
 ## [4.0.0] — Review remediation (Phases 1–3)
 
 Remediation of the remaining findings from the multi-agent code review.
@@ -78,7 +214,7 @@ Several defaults tightened toward "secure by default" — see
 - `Response::withCookie()` default is now `secure: true` — pass
   `'secure' => false` for plain-HTTP local development.
 - Default refresh cookie name `kingdom_refresh` → `melodic_refresh` — set
-  `refresh.cookieName` explicitly to keep existing sessions valid.
+  `auth.refreshToken.cookieName` explicitly to keep existing sessions valid.
 - OIDC callback requires an `id_token`; IdPs returning only an `access_token`
   are rejected, and the issuer host must match the discovery host.
 - `AuthorizationMiddleware` no longer lets anonymous requests through routes

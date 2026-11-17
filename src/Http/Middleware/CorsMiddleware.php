@@ -8,7 +8,7 @@ use Melodic\Http\HttpMethod;
 use Melodic\Http\Request;
 use Melodic\Http\Response;
 
-class CorsMiddleware implements MiddlewareInterface
+class CorsMiddleware implements MiddlewareInterface, ResponseDecoratorInterface
 {
     /** @var string[] */
     private readonly array $allowedOrigins;
@@ -40,10 +40,21 @@ class CorsMiddleware implements MiddlewareInterface
         return $this->addCorsHeaders($response, $request, preflight: false);
     }
 
+    public function decorate(Request $request, Response $response): Response
+    {
+        return $this->addCorsHeaders($response, $request, preflight: false);
+    }
+
     private function addCorsHeaders(Response $response, Request $request, bool $preflight): Response
     {
         $origin = $request->header('Origin');
         $matchedOrigin = $this->resolveOrigin($origin);
+
+        // The response differs per Origin whenever origins are restricted —
+        // including the "not allowed" case — so shared caches must key on it.
+        if ($matchedOrigin !== '*') {
+            $response = $this->appendVary($response, 'Origin');
+        }
 
         if ($matchedOrigin === null) {
             return $response;
@@ -61,15 +72,32 @@ class CorsMiddleware implements MiddlewareInterface
                 ->withHeader('Access-Control-Max-Age', (string) $this->maxAge);
         }
 
-        if ($matchedOrigin !== '*') {
-            $response = $response->withHeader('Vary', 'Origin');
-        }
-
         if ($this->allowCredentials && $matchedOrigin !== '*') {
             $response = $response->withHeader('Access-Control-Allow-Credentials', 'true');
         }
 
         return $response;
+    }
+
+    /** Add a token to the Vary header without clobbering an existing value. */
+    private function appendVary(Response $response, string $token): Response
+    {
+        $existing = '';
+
+        foreach ($response->getHeaders() as $name => $value) {
+            if (strtolower($name) === 'vary') {
+                $existing = $value;
+                $response = $response->withoutHeader($name);
+            }
+        }
+
+        $tokens = array_filter(array_map('trim', explode(',', $existing)), fn(string $t) => $t !== '');
+
+        if (!in_array('*', $tokens, true) && !in_array(strtolower($token), array_map('strtolower', $tokens), true)) {
+            $tokens[] = $token;
+        }
+
+        return $response->withHeader('Vary', implode(', ', $tokens));
     }
 
     private function resolveOrigin(?string $origin): ?string

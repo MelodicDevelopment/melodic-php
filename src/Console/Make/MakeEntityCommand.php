@@ -62,6 +62,7 @@ class MakeEntityCommand extends Command
             'namespace' => $namespace,
             'entity' => $entity,
             'plural' => $plural,
+            'pluralVariable' => lcfirst($plural),
             'table' => $table,
             'variable' => $variable,
         ];
@@ -365,8 +366,8 @@ class {entity}Controller extends ApiController
 
     public function index(): JsonResponse
     {
-        ${plural} = $this->{variable}Service->getAll();
-        return $this->json(array_map(fn($item) => $item->toArray(), ${plural}));
+        ${pluralVariable} = $this->{variable}Service->getAll();
+        return $this->json(array_map(fn($item) => $item->toArray(), ${pluralVariable}));
     }
 
     public function show(string $id): JsonResponse

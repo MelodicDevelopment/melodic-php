@@ -1,7 +1,6 @@
 # Exclude non-essential files from Composer installs (composer install --prefer-dist)
 # Users get src/, bin/, .claude/ (agents/skills), composer.json, LICENSE, and README.md
 /tests               export-ignore
-/web                 export-ignore
 /docs                export-ignore
 /phpstan.neon        export-ignore
 /phpunit.xml         export-ignore

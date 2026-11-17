@@ -55,7 +55,7 @@ class OidcAuthProvider implements AuthProviderInterface
         $session->set("melodic_oauth_verifier_{$this->config->name}", $codeVerifier);
         $session->set("melodic_oauth_nonce_{$this->config->name}", $nonce);
 
-        $codeChallenge = rtrim(strtr(base64_encode(hash('sha256', $codeVerifier, true)), '+/', '-_'), '=');
+        $codeChallenge = OAuthClient::codeChallenge($codeVerifier);
 
         $params = [
             'response_type' => 'code',
@@ -147,6 +147,21 @@ class OidcAuthProvider implements AuthProviderInterface
     {
         try {
             $jwks = $this->oidcProvider->getJwks();
+
+            // The token names a signing key the cached set does not have:
+            // the provider has most likely rotated its keys. Refetch once
+            // (throttled inside getJwks) instead of rejecting every token
+            // until the cache expires.
+            $keyId = self::peekKeyId($token);
+
+            if ($keyId !== null && !self::jwksHasKey($jwks, $keyId)) {
+                try {
+                    $jwks = $this->oidcProvider->refreshJwks();
+                } catch (SecurityException) {
+                    // Refresh failed — validate against the set we have.
+                }
+            }
+
             // Pass a default algorithm: some providers (notably Microsoft Entra)
             // omit the per-key "alg" in their JWKS, which parseKeySet otherwise
             // rejects. Binding such keys to the configured alg also prevents
@@ -190,7 +205,54 @@ class OidcAuthProvider implements AuthProviderInterface
             throw new SecurityException('Invalid token audience.');
         }
 
+        // So UserContext::getProvider() works for OIDC users on every request,
+        // not only inside the login callback.
+        $claims['provider'] ??= $this->config->name;
+
+        return $this->applyClaimMap($claims);
+    }
+
+    /**
+     * Copy provider-specific claims onto the names UserContext reads, using
+     * the provider's `claimMap` config — e.g. Entra app roles:
+     * `"claimMap": {"entitlements": "roles", "username": "preferred_username"}`.
+     * Original claims are left in place.
+     *
+     * @param array<string, mixed> $claims
+     * @return array<string, mixed>
+     */
+    private function applyClaimMap(array $claims): array
+    {
+        foreach (['sub', 'username', 'email', 'entitlements'] as $target) {
+            $source = $this->config->claimMap[$target] ?? null;
+
+            if (is_string($source) && $source !== '' && isset($claims[$source])) {
+                $claims[$target] = $target === 'entitlements' ? (array) $claims[$source] : $claims[$source];
+            }
+        }
+
         return $claims;
+    }
+
+    private static function peekKeyId(string $token): ?string
+    {
+        $header = base64_decode(strtr(explode('.', $token)[0], '-_', '+/'), true);
+        $decoded = $header !== false ? json_decode($header, true) : null;
+        $keyId = is_array($decoded) ? ($decoded['kid'] ?? null) : null;
+
+        return is_string($keyId) && $keyId !== '' ? $keyId : null;
+    }
+
+    /** @param array<string, mixed> $jwks */
+    private static function jwksHasKey(array $jwks, string $keyId): bool
+    {
+        foreach ((array) ($jwks['keys'] ?? []) as $key) {
+            if (is_array($key) && ($key['kid'] ?? null) === $keyId) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

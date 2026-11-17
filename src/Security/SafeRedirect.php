@@ -9,6 +9,9 @@ namespace Melodic\Security;
  * absolute paths are considered safe: a single leading "/" not followed by
  * another "/" or "\". Browsers normalize both "//host" and "/\host" in a
  * Location header to a protocol-relative (off-site) URL, so those are rejected.
+ *
+ * @deprecated since 4.1 — use \Melodic\Http\RedirectResponse::isLocalPath()
+ *             (this class only forwards to it). Will be removed in 5.0.
  */
 final class SafeRedirect
 {

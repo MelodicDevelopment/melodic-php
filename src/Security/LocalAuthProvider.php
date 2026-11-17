@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Melodic\Security;
 
-use Firebase\JWT\JWT;
 use Melodic\Http\Request;
 use Melodic\Http\Response;
 
@@ -49,32 +48,12 @@ class LocalAuthProvider implements AuthProviderInterface
         $claims = $this->authenticator->authenticate($username, $password);
         $claims['provider'] = $this->config->name;
 
-        $token = $this->issueLocalJwt($claims);
+        $token = LocalJwtIssuer::issue($this->localAuthConfig, $claims, $this->config->name);
 
         return new AuthResult(
             token: $token,
             claims: $claims,
             providerName: $this->config->name,
         );
-    }
-
-    /** @param array<string, mixed> $claims */
-    private function issueLocalJwt(array $claims): string
-    {
-        $now = time();
-
-        $payload = [
-            'iss' => $this->localAuthConfig->issuer,
-            'aud' => $this->localAuthConfig->audience,
-            'iat' => $now,
-            'exp' => $now + $this->localAuthConfig->tokenLifetime,
-            'sub' => $claims['sub'] ?? '',
-            'username' => $claims['username'] ?? '',
-            'email' => $claims['email'] ?? '',
-            'entitlements' => $claims['entitlements'] ?? [],
-            'provider' => $claims['provider'] ?? $this->config->name,
-        ];
-
-        return JWT::encode($payload, $this->localAuthConfig->signingKey, $this->localAuthConfig->algorithm);
     }
 }

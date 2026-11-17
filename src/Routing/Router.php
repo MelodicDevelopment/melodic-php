@@ -11,6 +11,9 @@ class Router
     /** @var Route[] */
     private array $routes = [];
 
+    /** @var array<string, Route> */
+    private array $namedRoutes = [];
+
     /** @var array{prefix: string, middleware: string[], attributes: array<string, mixed>}[] */
     private array $groupStack = [];
 
@@ -18,45 +21,45 @@ class Router
      * @param string[] $middleware
      * @param array<string, mixed> $attributes
      */
-    public function get(string $path, string $controller, string $action, array $middleware = [], array $attributes = []): self
+    public function get(string $path, string $controller, string $action, array $middleware = [], array $attributes = [], ?string $name = null): self
     {
-        return $this->addRoute(HttpMethod::GET, $path, $controller, $action, $middleware, $attributes);
+        return $this->addRoute(HttpMethod::GET, $path, $controller, $action, $middleware, $attributes, $name);
     }
 
     /**
      * @param string[] $middleware
      * @param array<string, mixed> $attributes
      */
-    public function post(string $path, string $controller, string $action, array $middleware = [], array $attributes = []): self
+    public function post(string $path, string $controller, string $action, array $middleware = [], array $attributes = [], ?string $name = null): self
     {
-        return $this->addRoute(HttpMethod::POST, $path, $controller, $action, $middleware, $attributes);
+        return $this->addRoute(HttpMethod::POST, $path, $controller, $action, $middleware, $attributes, $name);
     }
 
     /**
      * @param string[] $middleware
      * @param array<string, mixed> $attributes
      */
-    public function put(string $path, string $controller, string $action, array $middleware = [], array $attributes = []): self
+    public function put(string $path, string $controller, string $action, array $middleware = [], array $attributes = [], ?string $name = null): self
     {
-        return $this->addRoute(HttpMethod::PUT, $path, $controller, $action, $middleware, $attributes);
+        return $this->addRoute(HttpMethod::PUT, $path, $controller, $action, $middleware, $attributes, $name);
     }
 
     /**
      * @param string[] $middleware
      * @param array<string, mixed> $attributes
      */
-    public function delete(string $path, string $controller, string $action, array $middleware = [], array $attributes = []): self
+    public function delete(string $path, string $controller, string $action, array $middleware = [], array $attributes = [], ?string $name = null): self
     {
-        return $this->addRoute(HttpMethod::DELETE, $path, $controller, $action, $middleware, $attributes);
+        return $this->addRoute(HttpMethod::DELETE, $path, $controller, $action, $middleware, $attributes, $name);
     }
 
     /**
      * @param string[] $middleware
      * @param array<string, mixed> $attributes
      */
-    public function patch(string $path, string $controller, string $action, array $middleware = [], array $attributes = []): self
+    public function patch(string $path, string $controller, string $action, array $middleware = [], array $attributes = [], ?string $name = null): self
     {
-        return $this->addRoute(HttpMethod::PATCH, $path, $controller, $action, $middleware, $attributes);
+        return $this->addRoute(HttpMethod::PATCH, $path, $controller, $action, $middleware, $attributes, $name);
     }
 
     /**
@@ -89,6 +92,9 @@ class Router
         $this->post($path, $controller, 'store', $middleware, $attributes);
         $this->put($path . '/{id}', $controller, 'update', $middleware, $attributes);
         $this->delete($path . '/{id}', $controller, 'destroy', $middleware, $attributes);
+        // PATCH shares the update action (registered last so existing route
+        // order is unchanged); use Model::toUpdateArray() for partial updates.
+        $this->patch($path . '/{id}', $controller, 'update', $middleware, $attributes);
 
         return $this;
     }
@@ -137,6 +143,36 @@ class Router
     }
 
     /**
+     * Build the path for a named route, e.g. url('users.show', ['id' => 5])
+     * → "/users/5". Parameters not present in the pattern are appended as a
+     * query string.
+     *
+     * @param array<string, scalar|null> $params
+     */
+    public function url(string $name, array $params = []): string
+    {
+        $route = $this->namedRoutes[$name]
+            ?? throw new \InvalidArgumentException("No route is named '{$name}'.");
+
+        $path = preg_replace_callback(
+            '/\{([a-zA-Z_][a-zA-Z0-9_]*)(?::[^{}]+)?\}/',
+            function (array $m) use (&$params, $name): string {
+                if (!array_key_exists($m[1], $params)) {
+                    throw new \InvalidArgumentException("Route '{$name}' requires parameter '{$m[1]}'.");
+                }
+
+                $value = rawurlencode((string) $params[$m[1]]);
+                unset($params[$m[1]]);
+
+                return $value;
+            },
+            $route->pattern,
+        );
+
+        return $params === [] ? (string) $path : $path . '?' . http_build_query($params);
+    }
+
+    /**
      * @return Route[]
      */
     public function getRoutes(): array
@@ -155,19 +191,25 @@ class Router
         string $action,
         array $middleware,
         array $attributes,
+        ?string $name = null,
     ): self {
         $prefix = $this->getCurrentPrefix();
         $groupMiddleware = $this->getCurrentMiddleware();
         $groupAttributes = $this->getCurrentAttributes();
 
-        $this->routes[] = new Route(
+        $this->routes[] = $route = new Route(
             method: $method,
             pattern: $prefix . $path,
             controller: $controller,
             action: $action,
             middleware: array_merge($groupMiddleware, $middleware),
             attributes: array_replace_recursive($groupAttributes, $attributes),
+            name: $name,
         );
+
+        if ($name !== null) {
+            $this->namedRoutes[$name] = $route;
+        }
 
         return $this;
     }

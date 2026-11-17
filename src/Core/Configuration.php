@@ -44,7 +44,69 @@ class Configuration
             );
         }
 
-        $this->merge($decoded);
+        if (!is_array($decoded)) {
+            throw new RuntimeException("Configuration file '{$path}' must contain a JSON object.");
+        }
+
+        $this->merge(self::resolveEnvironment($decoded));
+    }
+
+    /**
+     * Replace `${VAR}` / `${VAR:-default}` placeholders in string values with
+     * environment variables, so secrets can live in the environment instead
+     * of in JSON files:
+     *
+     *     "database": { "password": "${DB_PASSWORD}" }
+     *
+     * A placeholder whose variable is unset and has no default is left
+     * untouched (so a literal "${...}" in existing config keeps its value).
+     * The default also applies when the variable is set but empty. Values are
+     * strings, except that a value consisting of a single placeholder that
+     * resolves to "true" or "false" becomes a boolean.
+     *
+     * @param array<mixed> $data
+     * @return array<mixed>
+     */
+    private static function resolveEnvironment(array $data): array
+    {
+        foreach ($data as $key => $value) {
+            if (is_array($value)) {
+                $data[$key] = self::resolveEnvironment($value);
+            } elseif (is_string($value) && str_contains($value, '${')) {
+                // A value that is exactly one placeholder resolving to
+                // "true"/"false" becomes a real boolean — otherwise
+                // `"debug": "${APP_DEBUG}"` with APP_DEBUG=false would be the
+                // truthy string "false".
+                $wholeValue = preg_match('/^\$\{[^}]+\}$/', $value) === 1;
+
+                $data[$key] = preg_replace_callback(
+                    '/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/',
+                    static function (array $m): string {
+                        $env = getenv($m[1]);
+
+                        if ($env === false) {
+                            $env = $_ENV[$m[1]] ?? $_SERVER[$m[1]] ?? null;
+                        }
+
+                        // ":-" follows shell semantics: the default applies
+                        // when the variable is unset *or empty*.
+                        if (is_string($env) && ($env !== '' || $m[2] === null)) {
+                            return $env;
+                        }
+
+                        return $m[2] ?? $m[0];
+                    },
+                    $value,
+                    flags: PREG_UNMATCHED_AS_NULL,
+                );
+
+                if ($wholeValue && is_string($data[$key]) && in_array(strtolower($data[$key]), ['true', 'false'], true)) {
+                    $data[$key] = strtolower($data[$key]) === 'true';
+                }
+            }
+        }
+
+        return $data;
     }
 
     public function get(string $key, mixed $default = null): mixed

@@ -94,6 +94,17 @@ class ViewEngine
         return $content;
     }
 
+    /**
+     * Render another template inline (no layout) and return its HTML. Use in
+     * .phtml as `<?= $this->partial('shared/nav', ['items' => $items]) ?>`.
+     *
+     * @param array<string, mixed> $data
+     */
+    public function partial(string $template, array $data = []): string
+    {
+        return $this->render($template, $data);
+    }
+
     public function renderBody(): string
     {
         return $this->bodyContent;
@@ -123,13 +134,25 @@ class ViewEngine
     /** @param array<string, mixed> $data */
     private function renderTemplate(string $path, array $data): string
     {
-        extract($data);
-
         $obLevel = ob_get_level();
         ob_start();
 
         try {
-            include $path;
+            // Templates run in their own scope, so a view variable can never
+            // collide with this method's locals. (Previously extract() ran in
+            // this scope and a variable named "path" replaced the template
+            // file being included.) EXTR_SKIP keeps the two reserved names
+            // safe; `$data` stays available to templates unless the view data
+            // itself defines a "data" key.
+            (function (string $__melodicTemplate, array $__melodicData): void {
+                extract($__melodicData, EXTR_SKIP);
+
+                if (!array_key_exists('data', $__melodicData)) {
+                    $data = $__melodicData;
+                }
+
+                include $__melodicTemplate;
+            })($path, $data);
 
             return (string) ob_get_clean();
         } catch (\Throwable $e) {

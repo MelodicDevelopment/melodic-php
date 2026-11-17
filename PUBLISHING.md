@@ -85,7 +85,7 @@ composer init --no-interaction
 composer require melodicdev/framework
 ```
 
-You should see Composer download `melodicdev/framework` and `firebase/php-jwt`. Then verify:
+You should see Composer download `melodicdev/framework`, `firebase/php-jwt` and `psr/container`. Then verify:
 
 ```php
 <?php
@@ -113,7 +113,7 @@ The framework version is tracked in `src/Framework.php`:
 ```php
 class Framework
 {
-    public const VERSION = '1.1.0';
+    public const VERSION = '4.1.0';
 }
 ```
 
@@ -122,20 +122,29 @@ This is the single source of truth. The `Console` class reads it automatically f
 Each time you want to release:
 
 1. **Bump the version** in `src/Framework.php` following semver
-2. **Commit and push** the version bump
-3. **Tag and push** using the same version from `Framework::VERSION`
+2. **Update the docs that carry the version or the API:**
+   - `CHANGELOG.md` — a new `## [x.y.z]` entry
+   - `MELODIC_PHP.md` — the version line at the top, and any section whose
+     API or behaviour changed (this file ships to every consumer project, so
+     it must match the release)
+   - `README.md` and the relevant `docs/*.md`
+   - a `MIGRATION-x.0.md` guide for a major release
+3. **Verify:** `composer test` and `composer analyse` are both clean
+4. **Commit and push**
+5. **Tag and push** using the same version from `Framework::VERSION`
 
 ```bash
-# 1. Update Framework::VERSION in src/Framework.php to the new version
+# 1–3. Bump Framework::VERSION, update docs, run the checks
+composer test && composer analyse
 
-# 2. Commit the bump
-git add src/Framework.php
-git commit -m "Bump version to v1.2.0"
+# 4. Commit
+git add -A
+git commit -m "chore: release v4.1.0"
 git push
 
-# 3. Tag and push (version must match Framework::VERSION)
-git tag v1.2.0
-git push origin v1.2.0
+# 5. Tag and push (version must match Framework::VERSION)
+git tag v4.1.0
+git push origin v4.1.0
 ```
 
 That's it. Packagist picks up the new tag and users get it on their next `composer update`.
@@ -148,7 +157,7 @@ After publishing, your Packagist page shows:
 - **Description**: from composer.json
 - **Homepage**: https://php.melodic.dev
 - **Versions**: each git tag
-- **Requirements**: PHP >=8.2, firebase/php-jwt
+- **Requirements**: PHP >=8.2, firebase/php-jwt, psr/container
 - **Install count**: updated as people download it
 - **Stars**: linked from GitHub
 
@@ -159,11 +168,17 @@ The `.gitattributes` file ensures users only receive the essential files:
 | Included | Excluded (export-ignore) |
 |----------|--------------------------|
 | `src/` | `tests/` |
-| `composer.json` | `web/` |
-| `LICENSE` | `docs/` |
-| `README.md` | `phpunit.xml`, `phpstan.neon` |
-| | `CLAUDE.md`, `PUBLISHING.md` |
-| | `.github/`, `.gitignore`, `.gitattributes` |
+| `bin/melodic` | `docs/` |
+| `.claude/agents/`, `.claude/skills/` | `phpunit.xml`, `phpstan.neon` |
+| `MELODIC_PHP.md` | `CLAUDE.md`, `PUBLISHING.md` |
+| `README.md`, `CHANGELOG.md`, `MIGRATION-*.md` | `.github/`, `.gitignore`, `.gitattributes` |
+| `composer.json`, `LICENSE` | `.claude/settings.local.json` |
+
+`MELODIC_PHP.md` is the usage reference consumer projects point their
+`CLAUDE.md` at (`vendor/melodicdev/framework/MELODIC_PHP.md`), and
+`.claude/` is what `vendor/bin/melodic claude:install` copies from — both must
+stay in the dist. `docs/` is **not** shipped, so anything a consumer needs at
+install time belongs in `MELODIC_PHP.md`, not only in `docs/`.
 
 ## Quick Reference
 
@@ -174,5 +189,5 @@ The `.gitattributes` file ensures users only receive the essential files:
 | List tags | `git tag -l` |
 | Delete a tag (local + remote) | `git tag -d v1.0.0 && git push origin :refs/tags/v1.0.0` |
 | Install from Packagist | `composer require melodicdev/framework` |
-| Install specific version | `composer require melodicdev/framework:^1.0` |
+| Install specific version | `composer require melodicdev/framework:^4.1` |
 | Install dev branch (no tag) | `composer require melodicdev/framework:dev-main` |

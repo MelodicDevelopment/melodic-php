@@ -61,6 +61,22 @@ Step 2:
 > Melodic's issuer check will (correctly) reject tokens whose `iss` does not match
 > the discovered issuer exactly.
 
+No `audience` is needed: it defaults to the client ID, which is what Entra puts
+in the ID token's `aud`. Keep `openid` in `scopes` — the callback requires an
+`id_token` and does not fall back to the access token.
+
+Entra app roles arrive in a `roles` claim, while Melodic reads entitlements from a
+claim named `entitlements`. Map them with a `claimMap` on the provider (since 4.1):
+
+```json
+"claimMap": { "entitlements": "roles" }
+```
+
+> **Plain-HTTP local development:** the auth and session cookies are `Secure` by default, and browsers only reliably accept `Secure` cookies over HTTPS (some exempt `localhost`), so over `http://localhost` the login may not stick (typical symptom: `Invalid OAuth state parameter.` on the callback). Put this in `config/config.dev.json` — the gitignored local override file loaded by `$app->loadEnvironmentConfig()` — and never in production config:
+> ```json
+> { "auth": { "cookieSecure": false }, "session": { "cookieSecure": false } }
+> ```
+
 ## Step 5: Set Up Routes
 
 In your `config/routes.php`, add the auth routes:
@@ -72,15 +88,17 @@ $router->group('/auth', function (Router $router) {
     $router->get('/login', HomeController::class, 'index');
     $router->get('/login/{provider}', HomeController::class, 'index');
     $router->get('/callback/{provider}', HomeController::class, 'index');
-    $router->get('/logout', HomeController::class, 'index');
+    $router->post('/logout', HomeController::class, 'index');
 }, middleware: [AuthCallbackMiddleware::class]);
 ```
+
+`AuthCallbackMiddleware` is provided by `SecurityServiceProvider`, so make sure your entry point calls `$app->register(new SecurityServiceProvider());`. Logout is a CSRF-protected `POST /auth/logout`, not a link — see [Logout](authentication.md#logout).
 
 ## Step 6: Test It
 
 1. Start your app:
    ```bash
-   php -S localhost:8080 -t example/public
+   php -S localhost:8080 -t public
    ```
 2. Visit `http://localhost:8080/auth/login`
 3. Click **Sign in with Microsoft Entra**
@@ -98,5 +116,16 @@ $router->group('/auth', function (Router $router) {
   the provider config (e.g. `"signingAlg": "ES256"`).
 - **`Invalid token issuer`**: You are almost certainly using the `/common/`
   discovery URL with a single-tenant app. Switch to the tenant-specific v2.0 URL.
+- **`Invalid token audience`**: Remove `audience` from the provider config (or set
+  it to the client ID). The ID token's `aud` is always the client ID.
+- **`No id_token received from authorization server`**: `scopes` must include
+  `openid`.
+- **`Invalid OAuth state parameter`**: The session cookie
+  did not survive the round trip to Microsoft — over plain HTTP, set
+  `session.cookieSecure` to `false` (see the note in Step 4).
+- **Stale keys or tenant after a config change**: Delete the discovery/JWKS cache
+  (`auth.oidcCacheDir`, by default `melodic_oidc_cache` in the system temp
+  directory). It is refreshed hourly, and a token signed with a key the cache
+  does not know triggers a refetch on its own.
 - **For production**: Change `redirectUri` to your production URL (must be `https`)
   and add it to the app registration's redirect URIs.

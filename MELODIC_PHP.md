@@ -1,63 +1,204 @@
-# Melodic PHP Framework — Complete Reference
+# Using the Melodic PHP Framework
 
-> **Version:** 1.7.3 · **PHP:** 8.2+ · **License:** MIT
-> **Packagist:** `melodicdev/framework` · **Docs:** https://php.melodic.dev
+> **Framework version:** 4.1.0 · **PHP:** 8.2+ · **Package:** `melodicdev/framework` · **License:** MIT
+
+This is the reference for **projects that are built with Melodic**. It ships
+inside the Composer package, so it always matches the installed version:
+
+```
+vendor/melodicdev/framework/MELODIC_PHP.md
+```
+
+It tells you — or the AI assistant working in your repository — how an
+application is meant to be structured, which framework APIs to reach for, and
+which mistakes to avoid. Every signature and behaviour described here was
+checked against the 4.1.0 source; where this file and an older tutorial or
+blog post disagree, this file is right.
+
+**Point your project at it.** In your project's `CLAUDE.md` (or equivalent
+assistant instructions file):
+
+```markdown
+## Melodic framework reference
+
+Before writing or changing code that uses the Melodic framework, read:
+
+@vendor/melodicdev/framework/MELODIC_PHP.md
+```
+
+`vendor/bin/melodic claude:install` writes that section for you (and appends it
+to an existing `CLAUDE.md` that does not mention this file yet), alongside the
+Melodic agent and skills.
 
 ---
 
-## Table of Contents
+## Contents
 
-1. [Core Architecture](#core-architecture)
-2. [CQRS Architecture](#cqrs-architecture)
-3. [Routing](#routing)
-4. [Request Handling](#request-handling)
-5. [Response](#response)
-6. [Database & Persistence](#database--persistence)
-7. [Models & Entities](#models--entities)
-8. [Services](#services)
-9. [Dependency Injection](#dependency-injection)
-10. [Middleware](#middleware)
-11. [Validation](#validation)
-12. [Authentication & Authorization](#authentication--authorization)
-13. [Events](#events)
-14. [Caching](#caching)
-15. [Sessions](#sessions)
-16. [Logging](#logging)
-17. [Error Handling](#error-handling)
-18. [View Engine (MVC)](#view-engine-mvc)
-19. [Console & CLI](#console--cli)
-20. [Testing](#testing)
-21. [Best Practices](#best-practices)
-22. [Extension Points](#extension-points)
+1. [The rules](#1-the-rules)
+2. [Install and project layout](#2-install-and-project-layout)
+3. [Bootstrap](#3-bootstrap)
+4. [Configuration](#4-configuration)
+5. [Dependency injection](#5-dependency-injection)
+6. [Routing](#6-routing)
+7. [Controllers](#7-controllers)
+8. [Models, binding and validation](#8-models-binding-and-validation)
+9. [Data access: queries, commands, services](#9-data-access-queries-commands-services)
+10. [Views (MVC)](#10-views-mvc)
+11. [Authentication and authorization](#11-authentication-and-authorization)
+12. [Middleware](#12-middleware)
+13. [Errors, logging, cache, sessions, events](#13-errors-logging-cache-sessions-events)
+14. [Console and migrations](#14-console-and-migrations)
+15. [Testing](#15-testing)
+16. [Worked example: a complete resource](#16-worked-example-a-complete-resource)
+17. [Common mistakes](#17-common-mistakes)
+18. [Quick API index](#18-quick-api-index)
 
 ---
 
-## Core Architecture
+## 1. The rules
 
-### Request Lifecycle
+Melodic is small and explicit on purpose. An application that follows these
+rules stays readable; one that fights them gets nothing back for the effort.
+
+**Architecture**
+
+1. **One direction of flow:** `Controller → Service → Query/Command → DbContext`.
+   Controllers never touch `DbContext` or write SQL. Services never build
+   HTTP responses.
+2. **CQRS without a mediator.** Each SQL statement lives in its own
+   `QueryInterface` or `CommandInterface` class. A service runs it directly:
+   `(new GetUserByIdQuery($id))->execute($this->context)`. No bus, no
+   repositories-of-everything, no ORM, no facades, no static service locator.
+3. **Constructor injection only.** Declare dependencies as typed constructor
+   parameters; the container auto-wires them. Never call the container from
+   inside a controller or service.
+4. **Wire the application in one place.** Bindings go in a `ServiceProvider`;
+   middleware and routes go in the bootstrap file.
+
+**Input and output**
+
+5. **Input arrives as a typed `Model`.** Type-hint a `Model` subclass on a
+   controller action and the framework hydrates, coerces and validates it
+   before your code runs. Do not hand-parse `$request->body()` and do not
+   validate by hand.
+6. **One request DTO per endpoint.** `CreateXRequest` and `UpdateXRequest` are
+   separate from the entity model `XModel`. Never bind request input straight
+   into an entity model (mass assignment); if you must reuse one, mark
+   server-owned properties `#[Guarded]`.
+7. **Only `#[Required]` makes a field mandatory.** Every other rule passes on
+   `null`.
+8. **Return a `Response` from every action** — use the controller helpers
+   (`json()`, `created()`, `noContent()`, `notFound()`, `view()`,
+   `redirect()`).
+9. **JSON APIs live under `/api`.** Error rendering, CSRF exemption and rate
+   limit responses all key off that prefix.
+
+**Data**
+
+10. **Always bind parameters.** SQL is a constant string with `:named`
+    placeholders; values go in the params array. Never interpolate input.
+11. **Model property names equal column names, exactly** (case-sensitive).
+12. **Multi-statement writes run inside `$context->transaction()`**, in the
+    service.
+
+**Security**
+
+13. **Escape every value you print in a template:** `<?= $this->e($value) ?>`.
+    Templates are not auto-escaped.
+14. **Keep the secure defaults.** Cookies are `Secure` + `HttpOnly` +
+    `SameSite=Lax`; turn `Secure` off only in `config.dev.json` for plain-HTTP
+    local work.
+15. **Secrets come from the environment** — `"${DB_PASSWORD}"` placeholders in
+    config, never literal values in committed JSON.
+16. **Redirect to user-influenced targets only with `RedirectResponse::local()`.**
+17. **State-changing MVC forms carry the CSRF token** (`<?= $csrfField ?>`)
+    and the app runs `CsrfMiddleware`.
+
+**Code style**
+
+18. `declare(strict_types=1);` in every file; PHP 8.2+ features (readonly,
+    constructor promotion, enums, `match`); PascalCase classes, camelCase
+    methods.
+19. Annotate iterable types (`array<string, mixed>`, `ProductModel[]`) so
+    PHPStan stays clean.
+
+---
+
+## 2. Install and project layout
+
+```bash
+composer require melodicdev/framework
+
+# or scaffold a new project (from a directory that has the framework installed)
+vendor/bin/melodic make:project my-app                # MVC + API (default)
+vendor/bin/melodic make:project my-api --type=api     # API only
+vendor/bin/melodic make:project my-site --type=mvc    # MVC only
+
+cd my-app && composer install
+php -S localhost:8080 -t public
+```
+
+The canonical layout (what `make:project` generates, plus the directories you
+add as the app grows):
 
 ```
-HTTP Request
-  → Application::run()
-    → Boot all ServiceProviders
-    → Request::capture() (wraps PHP superglobals)
-    → Pipeline (middleware chain)
-      → ErrorHandlerMiddleware (wraps everything in try/catch)
-      → CorsMiddleware
-      → JsonBodyParserMiddleware
-      → AuthenticationMiddleware (API or Web)
-      → ... (user middleware)
-      → RoutingMiddleware (final handler)
-        → Router::match() → resolve controller via DI
-        → Route-level middleware mini-pipeline
-        → Resolve action arguments (route params, model binding, validation)
-        → Controller action executes
-    → Response::send()
+my-app/
+├── composer.json                # PSR-4: MyApp\ → src/
+├── config/
+│   ├── config.json              # base config (committed)
+│   ├── config.qa.json           # per-environment overrides (committed)
+│   ├── config.pd.json
+│   └── config.dev.json          # local overrides — gitignored
+├── public/
+│   ├── index.php                # entry point
+│   └── .htaccess                # rewrite everything to index.php
+├── bin/console                  # your CLI (migrations, route:list, ...)
+├── migrations/                  # *.sql, timestamp-prefixed
+├── src/
+│   ├── Controllers/             # ApiController / MvcController subclasses
+│   ├── Services/                # Service subclasses — business logic
+│   ├── DTO/                     # Model subclasses (entities + request DTOs)
+│   ├── Data/{Entity}/Queries/   # QueryInterface implementations
+│   ├── Data/{Entity}/Commands/  # CommandInterface implementations
+│   ├── Middleware/              # MiddlewareInterface implementations
+│   └── Providers/AppServiceProvider.php
+├── views/                       # .phtml templates (full / mvc)
+│   ├── layouts/main.phtml
+│   └── home/index.phtml
+├── storage/{cache,logs}/
+└── tests/
 ```
 
-### Entry Point
+The root namespace is the PascalCased project name (`my-app` → `MyApp`), not
+necessarily `App`. Read `composer.json` before generating a class.
 
-The entry point is `public/index.php`. A typical bootstrap:
+### Naming
+
+| Kind | Location | Name | Example |
+|---|---|---|---|
+| Entity model | `src/DTO/` | `{Entity}Model` | `ProductModel` |
+| Request DTO | `src/DTO/` | `Create{Entity}Request`, `Update{Entity}Request` | `CreateProductRequest` |
+| Query | `src/Data/{Entity}/Queries/` | `Get{Entity}ByIdQuery`, `GetAll{Plural}Query` | `GetProductByIdQuery` |
+| Command | `src/Data/{Entity}/Commands/` | `Create/Update/Delete{Entity}Command` | `CreateProductCommand` |
+| Service | `src/Services/` | `{Entity}Service` | `ProductService` |
+| Controller | `src/Controllers/` | `{Entity}Controller` | `ProductController` |
+| Middleware | `src/Middleware/` | `{Purpose}Middleware` | `TenantMiddleware` |
+| Provider | `src/Providers/` | `{Name}ServiceProvider` | `AppServiceProvider` |
+
+`vendor/bin/melodic make:entity Product` generates the model, two queries,
+three commands, the service and the controller in those locations (existing
+files are skipped; no route is registered). `BlogPost`, `blog-post` and
+`blog_post` all produce `BlogPost`. The
+generated `Create`/`Update` commands contain `TODO` SQL and the controller
+actions take no request DTO — treat the output as a skeleton and finish it the
+way [section 16](#16-worked-example-a-complete-resource) shows.
+
+---
+
+## 3. Bootstrap
+
+`public/index.php` builds the application and runs it. The order is always:
+config → providers → middleware → routes → run.
 
 ```php
 <?php
@@ -65,2275 +206,1478 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
+use Melodic\Cache\CacheServiceProvider;
 use Melodic\Core\Application;
 use Melodic\Http\Middleware\CorsMiddleware;
 use Melodic\Http\Middleware\JsonBodyParserMiddleware;
+use Melodic\Http\Middleware\SecurityHeadersMiddleware;
+use Melodic\Log\LoggingServiceProvider;
+use Melodic\Routing\Router;
+use Melodic\Security\ApiAuthenticationMiddleware;
+use Melodic\Security\SecurityServiceProvider;
+use MyApp\Controllers\HomeController;
+use MyApp\Controllers\ProductController;
+use MyApp\Providers\AppServiceProvider;
 
-$app = new Application(__DIR__ . '/..');
-$app->loadEnvironmentConfig();
+$app = new Application(dirname(__DIR__));
+$app->loadEnvironmentConfig();                      // config/config.json → env → dev
 
+// Providers: register() runs now, boot() runs when the app starts.
+$app->register(new LoggingServiceProvider());
+$app->register(new CacheServiceProvider($app->getBasePath() . '/storage/cache'));
+$app->register(new SecurityServiceProvider());      // only if the app authenticates
 $app->register(new AppServiceProvider());
 
-$app->addMiddleware(new CorsMiddleware($app->config('cors') ?? []));
+// Global middleware — runs for every request, in this order.
+$app->addMiddleware(new SecurityHeadersMiddleware());
+$app->addMiddleware(new CorsMiddleware($app->config('cors', [])));
 $app->addMiddleware(new JsonBodyParserMiddleware());
 
-$app->routes(function ($router) {
-    $router->apiResource('/api/users', UserController::class);
+$app->routes(function (Router $router): void {
+    $router->get('/', HomeController::class, 'index', name: 'home');
+
+    $router->group('/api', function (Router $router): void {
+        $router->apiResource('/products', ProductController::class);
+    }, middleware: [ApiAuthenticationMiddleware::class]);
 });
 
 $app->run();
 ```
 
-### Application Class
+What `run()` does: boots providers, captures the request, sends it through
+an error-handling layer (always outermost, added for you) → your global
+middleware → the router → route middleware → the controller action, then sends
+the response. `HEAD` is answered by `GET` routes with the body suppressed.
 
-**Namespace:** `Melodic\Core\Application`
+`Application` API you will use:
 
-The `Application` class is the framework's bootstrap hub. It owns:
-- A `Configuration` instance (JSON config with dot-notation access)
-- A `Container` instance (DI container)
-- A `Router` instance
-- A list of `MiddlewareInterface` instances
-- A list of `ServiceProvider` instances
-
-**Key methods:**
-
-| Method | Description |
+| Method | Purpose |
 |---|---|
-| `__construct(string $basePath)` | Creates app with base path. Registers `Configuration`, `Container`, `Router`, and `Application` itself in the container. |
-| `loadConfig(string $path)` | Load a single JSON config file. Paths without `/` prefix are relative to `$basePath`. |
-| `loadEnvironmentConfig(string $configDir = 'config')` | Loads `config.json` → `config.{APP_ENV}.json` → `config.dev.json` (see [Configuration](#configuration)). |
-| `getEnvironment()` | Returns current environment string (default `'dev'`). |
-| `config(?string $key, mixed $default)` | Shortcut: `null` key returns the `Configuration` object; string key calls `Configuration::get()`. |
-| `addMiddleware(MiddlewareInterface $middleware)` | Appends middleware to the global pipeline. |
-| `services(callable $callback)` | Passes the `Container` to a closure for registering bindings. |
-| `register(ServiceProvider $provider)` | Registers and immediately calls `$provider->register($container)`. |
-| `routes(callable $callback)` | Passes the `Router` to a closure for defining routes. |
-| `getContainer()` | Returns the DI container. |
-| `getRouter()` | Returns the router. |
-| `getConfiguration()` | Returns the configuration. |
-| `getBasePath()` | Returns the base path. |
-| `run(?Request $request)` | Boots providers, builds middleware pipeline, dispatches request, sends response. |
+| `loadEnvironmentConfig(string $configDir = 'config')` | Load layered config (preferred) |
+| `loadConfig(string $path)` | Load/merge one JSON file |
+| `config(?string $key = null, mixed $default = null)` | Read a value (dot notation); no key → the `Configuration` |
+| `getEnvironment(): string` | `APP_ENV`, default `dev` |
+| `getBasePath(): string` | Project root |
+| `register(ServiceProvider $p)` | Register a provider |
+| `services(callable $fn)` | Ad-hoc bindings: `fn(Container $c)` |
+| `addMiddleware(MiddlewareInterface $m)` | Add global middleware |
+| `routes(callable $fn)` | Define routes: `fn(Router $r)` |
+| `getContainer()`, `getRouter()`, `getConfiguration()` | Access the pieces |
+| `boot(): self` | Boot providers once (automatic) |
+| `handle(Request $r): Response` | Run a request without sending output — tests, workers |
+| `run(?Request $r = null): void` | Handle and send |
 
-**`run()` in detail:**
+**Make the app testable:** build the `Application` in `bootstrap/app.php` and
+`return $app;`. Then `public/index.php` is `(require __DIR__ . '/../bootstrap/app.php')->run();`
+and tests call `->handle($request)` on the same object
+([section 15](#15-testing)).
 
-1. Calls `boot()` on every registered `ServiceProvider`
-2. Resolves a `LoggerInterface` from the container (falls back to `NullLogger`)
-3. Creates an `ExceptionHandler` and registers it in the container
-4. Captures the `Request` (from PHP superglobals via `Request::capture()`)
-5. Wraps `RoutingMiddleware` as the final handler in a `Pipeline`
-6. Prepends `ErrorHandlerMiddleware` (so it wraps the entire stack)
-7. Appends all user-registered middleware
-8. Calls `$pipeline->handle($request)` → `$response->send()`
-9. If anything throws outside the pipeline (catastrophic failure), a last-resort handler renders a plain error
+---
 
-### Configuration
+## 4. Configuration
 
-**Namespace:** `Melodic\Core\Configuration`
-
-Configuration is a key-value store loaded from JSON files with dot-notation access and deep-merge semantics.
-
-**Loading order** (via `loadEnvironmentConfig()`):
+JSON files, deep-merged in this order by `loadEnvironmentConfig()`:
 
 ```
-config/config.json           ← base (always loaded)
-config/config.{APP_ENV}.json ← environment overrides (skipped for 'dev')
-config/config.dev.json       ← local developer overrides (always gitignored)
+config/config.json  →  config/config.{APP_ENV}.json  →  config/config.dev.json
+     (base)                 (environment)                 (local, gitignored)
 ```
 
-- `APP_ENV` is read from `getenv('APP_ENV')`, defaults to `'dev'`
-- When `APP_ENV` is `'dev'`, no environment file is loaded (just base + dev)
-- After loading, `app.environment` is set to the detected environment value
+- `APP_ENV` (environment variable) picks the middle file. Unset or `dev` skips
+  it. A missing environment or dev file is fine; a missing `config.json` throws.
+- `app.environment` is set for you; read it with `$app->getEnvironment()`.
+- **Maps merge, lists replace.** An override of `cors.allowedOrigins` replaces
+  the whole list — repeat every entry the environment needs.
+- Read values with dot notation: `$app->config('database.dsn')`,
+  `$config->get('app.debug', false)`. A JSON key that itself contains a dot is
+  not addressable — nest instead.
+- **Environment placeholders** in any string value: `"${DB_PASSWORD}"` or
+  `"${DB_HOST:-localhost}"`. An unset variable without a default leaves the
+  text untouched; a default applies when the variable is unset **or empty**.
+  The result is a string, with one exception: a value that is exactly one
+  placeholder resolving to `true` / `false` becomes a real boolean
+  (`"debug": "${APP_DEBUG:-false}"` works). Numbers stay strings — cast them
+  where you read them.
+- `config.dev.json` is loaded in **every** environment when the file exists.
+  Keep it gitignored and out of deployment artifacts.
+- `vendor/bin/melodic make:config staging` creates `config/config.staging.json`.
 
-**Methods:**
+Keys the framework itself reads:
 
-| Method | Description |
-|---|---|
-| `loadFile(string $path)` | Loads and deep-merges a JSON file. Throws `RuntimeException` if file not found or invalid JSON. |
-| `get(string $key, mixed $default = null)` | Dot-notation access: `'database.dsn'` navigates `['database']['dsn']`. |
-| `set(string $key, mixed $value)` | Dot-notation set: creates nested arrays as needed. |
-| `has(string $key)` | Returns `true` if the key path exists. |
-| `all()` | Returns the entire config array. |
-| `merge(array $data)` | Deep-merges an array into the existing config. |
+| Key | Default | Used by |
+|---|---|---|
+| `app.debug` | `false` | Error pages/JSON include exception detail when true. **Never true in production.** |
+| `app.errorsAsExceptions` | `false` | Turn PHP warnings/notices into exceptions (500 + log) |
+| `views.path` | `views` | Default `ViewEngine` (relative to the project root, or absolute) |
+| `logging.path` | `{basePath}/logs` | `LoggingServiceProvider` (give an absolute path) |
+| `logging.level` | `debug` | Minimum level written |
+| `logging.maxFiles` | `0` | Keep only the newest N daily log files (0 = all) |
+| `session.cookieSecure` / `cookieSameSite` / `cookiePath` / `cookieDomain` | `true` / `Lax` / `/` / `""` | Session cookie |
+| `csrf.exceptPaths` | `["/api"]` | `CsrfMiddleware` from `SecurityServiceProvider` |
+| `auth.*` | see [section 11](#11-authentication-and-authorization) | `SecurityServiceProvider` |
 
-**Deep merge behavior:** Arrays are merged recursively. Scalar values in `$override` replace values in `$base`. This means environment files only need to specify the keys they want to override.
+Everything else (`database.*`, `cors.*`, your own keys) is application
+convention: you read it and pass it to the class that needs it.
 
-### Directory Structure
+A reasonable base file:
 
-**Framework (`melodicdev/framework`):**
-
+```json
+{
+    "app": { "debug": false },
+    "database": {
+        "dsn": "${DB_DSN}",
+        "username": "${DB_USER:-}",
+        "password": "${DB_PASSWORD:-}"
+    },
+    "cors": {
+        "allowedOrigins": ["https://app.example.com"],
+        "allowedMethods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        "allowedHeaders": ["Content-Type", "Authorization"],
+        "allowCredentials": false,
+        "maxAge": 3600
+    },
+    "logging": { "level": "info", "maxFiles": 30 }
+}
 ```
-src/
-├── Core/           Application, Configuration
-├── Http/           Request, Response, JsonResponse, RedirectResponse
-│   ├── Exception/  HttpException, BadRequestException, NotFoundException, MethodNotAllowedException
-│   └── Middleware/ MiddlewareInterface, RequestHandlerInterface, Pipeline, CorsMiddleware,
-│                    JsonBodyParserMiddleware, ErrorHandlerMiddleware
-├── Routing/        Route, Router, RoutingMiddleware
-├── Controller/     Controller (abstract), ApiController, MvcController
-├── DI/             ContainerInterface, Container, ServiceProvider
-├── Data/           DbContextInterface, DbContext, QueryInterface, CommandInterface, Model
-├── Security/       JWT, OIDC, OAuth2, local auth, CSRF, refresh tokens, session manager, middleware
-├── Service/        Service (base class)
-├── Validation/     Validator, ValidationResult, ValidationException, Rules/*
-├── View/           ViewEngine, ViewBag
-├── Event/          Event, EventDispatcher, EventDispatcherInterface, EventServiceProvider
-├── Cache/          CacheInterface, FileCache, ArrayCache, CacheServiceProvider
-├── Session/        SessionInterface, NativeSession, ArraySession, SessionServiceProvider
-├── Log/            LogLevel, LoggerInterface, FileLogger, NullLogger, LoggingServiceProvider
-├── Error/          ExceptionHandler
-├── Console/        Console, Command, CommandInterface, route:list, cache:clear, claude:install
-│   └── Make/       MakeEntityCommand, MakeProjectCommand, MakeConfigCommand, Stub
-├── Framework.php   Version constant (Framework::VERSION)
-└── Utilities.php   Debug helper (kill)
-```
 
-**Application projects built with Melodic:**
+and a local `config/config.dev.json`:
 
-```
-my-app/
-├── composer.json                  PSR-4: App\ → src/
-├── config/
-│   ├── config.json                Base config
-│   ├── config.qa.json             QA overrides
-│   ├── config.pd.json             Production overrides
-│   └── config.dev.json            Local overrides (gitignored)
-├── public/
-│   ├── index.php                  Entry point
-│   └── .htaccess                  Apache URL rewriting
-├── bin/
-│   └── console                    CLI entry point
-├── src/
-│   ├── Controllers/               ApiController / MvcController subclasses
-│   ├── Services/                  Service subclasses
-│   ├── DTO/                       Model subclasses (flat directory)
-│   ├── Data/
-│   │   └── {Entity}/
-│   │       ├── Queries/           QueryInterface implementations
-│   │       └── Commands/          CommandInterface implementations
-│   ├── Middleware/                 Custom middleware
-│   └── Providers/
-│       └── AppServiceProvider.php
-├── views/                         MVC templates (.phtml)
-│   ├── layouts/
-│   └── {page}/
-├── storage/
-│   ├── cache/
-│   └── logs/
-└── tests/
+```json
+{
+    "app": { "debug": true },
+    "auth": { "cookieSecure": false, "refreshToken": { "cookieSecure": false } },
+    "session": { "cookieSecure": false }
+}
 ```
 
 ---
 
-## CQRS Architecture
+## 5. Dependency injection
 
-Melodic implements CQRS (Command Query Responsibility Segregation) without a mediator. Queries and Commands are plain PHP objects that hold their SQL and parameters. They are instantiated directly in services and executed against a `DbContext`.
-
-### QueryInterface
-
-**Namespace:** `Melodic\Data\QueryInterface`
+`Melodic\DI\Container` auto-wires any class whose constructor parameters are
+class-typed (or have defaults). You only register what auto-wiring cannot
+guess: interfaces, classes that need scalars, and things that must be shared.
 
 ```php
-interface QueryInterface
+namespace MyApp\Providers;
+
+use Melodic\Core\Configuration;
+use Melodic\Data\DbContext;
+use Melodic\Data\DbContextInterface;
+use Melodic\DI\Container;
+use Melodic\DI\ServiceProvider;
+use Melodic\Error\ExceptionHandler;
+use Melodic\Http\JsonResponse;
+
+class AppServiceProvider extends ServiceProvider
 {
-    public function getSql(): string;
-    public function execute(DbContextInterface $context): mixed;
-}
-```
-
-- `getSql()` returns the SQL statement (useful for debugging/logging).
-- `execute()` runs the query against the provided `DbContext` and returns the result — typically a model instance, array of models, or `null`.
-
-**Example Query:**
-
-```php
-class GetUserByIdQuery implements QueryInterface
-{
-    private readonly string $sql;
-
-    public function __construct(private readonly int $id)
+    public function register(Container $container): void
     {
-        $this->sql = "SELECT * FROM users WHERE id = :id";
+        // One shared database connection, built lazily from config.
+        $container->singleton(DbContextInterface::class, function (Container $c): DbContextInterface {
+            $config = $c->get(Configuration::class);
+
+            return new DbContext(
+                (string) $config->get('database.dsn'),
+                $config->get('database.username'),
+                $config->get('database.password'),
+            );
+        });
+
+        // Interface → implementation (new instance per resolution).
+        $container->bind(MailerInterface::class, SmtpMailer::class);
     }
 
-    public function getSql(): string { return $this->sql; }
-
-    public function execute(DbContextInterface $context): ?UserModel
+    public function boot(Container $container): void
     {
-        return $context->queryFirst(UserModel::class, $this->sql, ['id' => $this->id]);
-    }
-}
-```
-
-**Example "Get All" Query:**
-
-```php
-class GetAllUsersQuery implements QueryInterface
-{
-    private readonly string $sql;
-
-    public function __construct()
-    {
-        $this->sql = "SELECT * FROM users";
-    }
-
-    public function getSql(): string { return $this->sql; }
-
-    /**
-     * @return array<UserModel>
-     */
-    public function execute(DbContextInterface $context): array
-    {
-        return $context->query(UserModel::class, $this->sql);
+        // Runs once at startup, after every provider has registered.
+        $container->get(ExceptionHandler::class)->registerMapper(
+            InsufficientStockException::class,
+            fn(\Throwable $e) => new JsonResponse(['error' => $e->getMessage()], 409),
+        );
     }
 }
 ```
 
-### CommandInterface
+| Method | Meaning |
+|---|---|
+| `bind($abstract, $concrete)` | New instance each `get()`. `$concrete` is a class name or `fn(Container $c)` |
+| `singleton($abstract, $concrete)` | One shared instance. `singleton(Interface::class, Impl::class)` also makes a direct `Impl` type-hint share it |
+| `instance($abstract, $object)` | Register an existing object |
+| `get($id)` | Resolve (binding, else auto-wire) |
+| `isBound($id)` | Explicitly registered? |
+| `has($id)` | Resolvable — true for **any existing class**, so use `isBound()` to test for a registration |
 
-**Namespace:** `Melodic\Data\CommandInterface`
+Already registered by `Application`: `Configuration`, `Container`, `Router`,
+`Application`, a default `ViewEngine`, and (at boot) `ExceptionHandler`.
 
-```php
-interface CommandInterface
-{
-    public function getSql(): string;
-    public function execute(DbContextInterface $context): int;
-}
-```
+Facts worth knowing:
 
-- `execute()` returns the number of affected rows (from `PDOStatement::rowCount()`).
-
-**Example Commands:**
-
-```php
-class CreateUserCommand implements CommandInterface
-{
-    private readonly string $sql;
-
-    public function __construct(private readonly UserModel $model)
-    {
-        $this->sql = "INSERT INTO users (Username, Email) VALUES (:Username, :Email)";
-    }
-
-    public function getSql(): string { return $this->sql; }
-
-    public function execute(DbContextInterface $context): int
-    {
-        return $context->command($this->sql, $this->model->toPascalArray());
-    }
-}
-
-class DeleteUserCommand implements CommandInterface
-{
-    private readonly string $sql;
-
-    public function __construct(private readonly int $id)
-    {
-        $this->sql = "DELETE FROM users WHERE id = :id";
-    }
-
-    public function getSql(): string { return $this->sql; }
-
-    public function execute(DbContextInterface $context): int
-    {
-        return $context->command($this->sql, ['id' => $this->id]);
-    }
-}
-```
-
-### How Queries and Commands Are Dispatched
-
-There is **no mediator, no command bus, no handler registry**. Services instantiate query/command objects directly and call `execute()`:
-
-```php
-class UserService extends Service
-{
-    public function getById(int $id): ?UserModel
-    {
-        return (new GetUserByIdQuery($id))->execute($this->context);
-    }
-
-    public function create(UserModel $model): int
-    {
-        (new CreateUserCommand($model))->execute($this->context);
-        return $this->context->lastInsertId();
-    }
-}
-```
-
-### Read vs Write Separation
-
-The `Service` base class accepts two optional `DbContextInterface` instances:
-
-```php
-class Service
-{
-    public function __construct(
-        protected readonly DbContextInterface $context,
-        protected readonly ?DbContextInterface $readOnlyContext = null,
-    ) {}
-
-    protected function getContext(): DbContextInterface { return $this->context; }
-    protected function getReadOnlyContext(): DbContextInterface { return $this->readOnlyContext ?? $this->context; }
-}
-```
-
-- `$context` is the primary (read-write) database connection
-- `$readOnlyContext` is an optional read-only replica; falls back to `$context` if not provided
-- Queries should use `$this->getReadOnlyContext()` (or `$this->context` as default)
-- Commands should use `$this->context` (or `$this->getContext()`)
-
-### Error Handling in CQRS
-
-- Exceptions thrown in query/command `execute()` propagate through the service to the controller
-- The `ErrorHandlerMiddleware` catches any uncaught `\Throwable` and converts it to an appropriate HTTP response
-- For validation failures during model binding, the `RoutingMiddleware` returns a `400 JsonResponse` with error details before the controller action is called
-- For transactional operations, use `DbContext::transaction()` which automatically rolls back on exception
+- Controllers, services and route middleware are resolved from the container
+  **per request** and are not shared unless you register them as singletons.
+  Extending `Melodic\Service\Service` needs no registration: its
+  `DbContextInterface` parameter is auto-wired from your binding.
+- Resolution failures throw `ContainerException` (`NotFoundException` for an
+  unknown id, `CircularDependencyException` for a cycle). Exceptions thrown by
+  your own factories and constructors propagate unchanged.
+- The container is PSR-11 compatible (`Melodic\DI\ContainerInterface` extends
+  `Psr\Container\ContainerInterface`).
+- A scalar constructor parameter without a default cannot be auto-wired —
+  register a factory.
 
 ---
 
-## Routing
+## 6. Routing
 
-### Route Registration
-
-**Namespace:** `Melodic\Routing\Router`
-
-Routes are registered in the `routes()` callback on the `Application`:
+Routes map a method and path to a controller class and an action method name.
 
 ```php
-$app->routes(function (Router $router) {
-    $router->get('/users', UserController::class, 'index');
-    $router->post('/users', UserController::class, 'store');
-    $router->get('/users/{id}', UserController::class, 'show');
-    $router->put('/users/{id}', UserController::class, 'update');
-    $router->delete('/users/{id}', UserController::class, 'destroy');
-    $router->patch('/users/{id}', UserController::class, 'partialUpdate');
+$app->routes(function (Router $router): void {
+    $router->get('/', HomeController::class, 'index', name: 'home');
+    $router->get('/products/{id:\d+}', CatalogController::class, 'show', name: 'catalog.show');
+
+    $router->group('/api', function (Router $router): void {
+        $router->apiResource('/products', ProductController::class);
+
+        $router->post('/products/{id:\d+}/archive', ProductController::class, 'archive',
+            middleware: [AuthorizationMiddleware::class],
+            attributes: ['entitlements' => ['catalog.admin']],
+        );
+    }, middleware: [ApiAuthenticationMiddleware::class]);
 });
 ```
 
-**Available HTTP method shortcuts:**
+**Verbs:** `get`, `post`, `put`, `patch`, `delete` — all with the signature
+`(string $path, string $controller, string $action, array $middleware = [], array $attributes = [], ?string $name = null)`.
 
-| Method | Registers |
-|---|---|
-| `get(path, controller, action, middleware, attributes)` | GET route |
-| `post(path, controller, action, middleware, attributes)` | POST route |
-| `put(path, controller, action, middleware, attributes)` | PUT route |
-| `delete(path, controller, action, middleware, attributes)` | DELETE route |
-| `patch(path, controller, action, middleware, attributes)` | PATCH route |
+**`apiResource($path, $controller, $middleware = [], $attributes = [])`**
+registers six routes:
 
-### RESTful API Resource
-
-`apiResource()` registers all five CRUD routes at once:
-
-```php
-$router->apiResource('/api/users', UserController::class);
-```
-
-This registers:
-
-| HTTP Method | Path | Action |
+| Method | Path | Action |
 |---|---|---|
-| GET | `/api/users` | `index` |
-| GET | `/api/users/{id}` | `show` |
-| POST | `/api/users` | `store` |
-| PUT | `/api/users/{id}` | `update` |
-| DELETE | `/api/users/{id}` | `destroy` |
+| GET | `{path}` | `index` |
+| GET | `{path}/{id}` | `show` |
+| POST | `{path}` | `store` |
+| PUT | `{path}/{id}` | `update` |
+| PATCH | `{path}/{id}` | `update` |
+| DELETE | `{path}/{id}` | `destroy` |
 
-### Route Parameters
+**`group($prefix, $callback, $middleware = [], $attributes = [])`** prefixes
+paths and prepends middleware; groups nest. Group attributes merge into route
+attributes (route wins).
 
-Route parameters use `{name}` syntax and are captured as named groups:
+**Parameters**
+
+- `{name}` matches one path segment. `{name:regex}` constrains it
+  (`{id:\d+}`, `{slug:[a-z0-9-]+}`); the regex may not contain braces. A
+  value that fails the constraint does not match the route at all (404),
+  whereas an unconstrained `{id}` bound to `int $id` answers 400.
+- Captured values are URL-decoded and bound to the action parameter **with the
+  same name**, coerced to its declared type (`int`, `float`, `bool`, `string`,
+  backed enum). An uncoercible value is a 400, not a 500.
+- A trailing slash matches the same route (`/products/` ≡ `/products`).
+- Literal segments match literally (`/v1.0/` — the dot is not a wildcard).
+- Routes are tried in registration order; register specific paths
+  (`/products/featured`) before parameterised ones (`/products/{id}`) or
+  constrain the parameter.
+
+**Middleware on routes** is a list of **class names**, resolved from the
+container, run after global middleware (group first, then route). Because it
+is built by the container it cannot take per-route constructor arguments —
+pass per-route data through `attributes` and read
+`$request->getAttribute('route.attributes')` in the middleware.
+
+**Named routes:** `$router->url('catalog.show', ['id' => 5])` → `/products/5`;
+extra parameters become a query string. Inject `Router` where you need it.
+
+**Unmatched requests:** unknown path → 404; known path, wrong method → 405
+with an `Allow` header; HTTP method the framework does not model → 501.
+
+`route:list` (see [section 14](#14-console-and-migrations)) prints the table.
+
+---
+
+## 7. Controllers
+
+Extend `ApiController` for JSON endpoints, `MvcController` for HTML. Inject
+services through the constructor. Each action returns a `Response`.
 
 ```php
-$router->get('/posts/{postId}/comments/{commentId}', CommentController::class, 'show');
-```
+namespace MyApp\Controllers;
 
-The pattern `{id}` is converted to the regex `(?P<id>[^/]+)`. Parameters are passed to controller action methods by name:
+use Melodic\Controller\ApiController;
+use Melodic\Http\JsonResponse;
+use Melodic\Http\Response;
+use Melodic\Routing\FromQuery;
+use MyApp\DTO\CreateProductRequest;
+use MyApp\DTO\PageRequest;
+use MyApp\DTO\UpdateProductRequest;
+use MyApp\Services\ProductService;
 
-```php
-public function show(string $postId, string $commentId): JsonResponse
+class ProductController extends ApiController
 {
-    // $postId and $commentId are populated from the URL
-}
-```
+    public function __construct(
+        private readonly ProductService $products,
+    ) {}
 
-**Query parameters** are accessed via the `Request` object, not through route definitions.
-
-### Route Groups
-
-Groups apply a path prefix and/or middleware to a set of routes:
-
-```php
-$router->group('/api', function (Router $r) {
-    $r->apiResource('/users', UserController::class);
-    $r->apiResource('/posts', PostController::class);
-}, middleware: [AuthorizationMiddleware::class]);
-```
-
-Groups can be nested. Prefixes and middleware accumulate from outer to inner groups.
-
-### Route Matching
-
-`Router::match(HttpMethod $method, string $path)` iterates all registered routes in order and returns the first match:
-
-```php
-$result = $router->match($request->method(), $request->path());
-// Returns: ['route' => Route, 'params' => ['id' => '42']] or null
-```
-
-The `Route::matches()` method converts `{param}` placeholders to named regex groups and tests against the path with full-string anchoring (`^...$`).
-
-### Route-Level Middleware
-
-Middleware can be attached per-route or per-group. These are class names (strings) resolved through the DI container:
-
-```php
-$router->get('/admin', AdminController::class, 'dashboard', middleware: [
-    AuthorizationMiddleware::class,
-]);
-```
-
-Route-level middleware runs in a mini-pipeline after the global middleware pipeline resolves the route.
-
-### Route Attributes
-
-Routes can carry arbitrary metadata as a keyed array. Middleware reads these attributes from the request to drive cross-cutting policies (permissions, feature flags, rate-limit tiers) without re-implementing the same guard inside every controller action:
-
-```php
-$router->get('/people', PersonController::class, 'index',
-    middleware: [RequirePermissionMiddleware::class],
-    attributes: ['permission' => 'people.view']);
-```
-
-Attributes can also be set at the group or `apiResource` level and propagate to descendant routes:
-
-```php
-$router->group('/api', function (Router $r) {
-    $r->apiResource('/users', UserController::class,
-        attributes: ['permission' => 'users.manage']);
-}, attributes: ['scope' => 'api']);
-// Each generated route ends up with ['scope' => 'api', 'permission' => 'users.manage']
-```
-
-Group and route attributes deep-merge (recursive `array_replace`). On a key conflict, the more-specific level wins (route over group, inner group over outer).
-
-`RoutingMiddleware` exposes the matched route's metadata on the request before the per-route middleware pipeline runs:
-
-| Request attribute | Value |
-|---|---|
-| `route.attributes` | The merged attributes array for the matched route |
-| `route` | The matched `Route` instance (handy for diagnostics) |
-
-```php
-class RequirePermissionMiddleware implements MiddlewareInterface
-{
-    public function process(Request $request, RequestHandlerInterface $handler): Response
+    public function index(#[FromQuery] PageRequest $page): JsonResponse
     {
-        $attributes = $request->getAttribute('route.attributes', []);
-        $required = $attributes['permission'] ?? null;
+        return $this->json($this->products->getPage($page->Page, $page->PerPage));
+    }
 
-        if ($required !== null && !$this->userHas($required)) {
-            return new JsonResponse(['error' => 'forbidden'], 403);
-        }
+    public function show(int $id): JsonResponse
+    {
+        $product = $this->products->getById($id);
 
-        return $handler->handle($request);
+        return $product !== null ? $this->json($product) : $this->notFound();
+    }
+
+    public function store(CreateProductRequest $request): JsonResponse
+    {
+        $product = $this->products->create($request);
+
+        return $this->created($product, "/api/products/{$product->Id}");
+    }
+
+    public function update(int $id, UpdateProductRequest $request): JsonResponse
+    {
+        $product = $this->products->update($id, $request);
+
+        return $product !== null ? $this->json($product) : $this->notFound();
+    }
+
+    public function destroy(int $id): Response
+    {
+        return $this->products->delete($id) ? $this->noContent() : $this->notFound();
     }
 }
 ```
 
+### How action arguments are resolved
+
+For each parameter of the action, in this order:
+
+1. **Name matches a route parameter** → that value, coerced to the declared
+   type (400 on bad input).
+2. **Scalar/untyped with no matching route parameter** → its default value,
+   or `null` if nullable; otherwise the request fails with a 500 — every
+   scalar parameter must be a route parameter or have a default.
+3. **`Model` subclass** → hydrated from the request body (or from the query
+   string when the parameter has `#[FromQuery]`), then validated. Failure
+   returns 400 before the action runs.
+4. **Any other class** → resolved from the container (per-action service
+   injection).
+
+### Helpers
+
+On every controller (`Melodic\Controller\Controller`):
+
+| Helper | Result |
+|---|---|
+| `json(mixed $data, int $status = 200)` | JSON response. Models, `PaginatedResult` and arrays of them serialise themselves |
+| `created(mixed $data, ?string $location = null)` | 201 (+ `Location`) |
+| `noContent()` | 204 |
+| `badRequest($data = null)`, `unauthorized()`, `forbidden()`, `notFound()` | 400 / 401 / 403 / 404 with `{"error": "..."}` unless you pass data |
+| `getUserContext(): ?UserContextInterface` | The authenticated user; **`null` when no auth middleware ran** |
+| `$this->request` | The current `Request` |
+
+On `MvcController` additionally: `view(string $template, array $data = [])`,
+`setLayout(string $layout)`, `viewBag()` / `$this->viewBag`,
+`redirect(string $url, int $status = 302)`, `csrfToken(): ?string`.
+
+### Request
+
+`Request` is immutable; `withAttribute()` returns a new instance.
+
+| Method | Returns |
+|---|---|
+| `method(): HttpMethod`, `path(): string`, `uri(): string`, `queryString(): string` | Request line |
+| `query(?string $key = null, $default = null)` | Query parameter(s) |
+| `body(?string $key = null, $default = null)` | Form field(s), or the decoded JSON body when `JsonBodyParserMiddleware` ran |
+| `rawBody(): string` | Unparsed body |
+| `header(string $name): ?string` (case-insensitive), `bearerToken(): ?string` | Headers |
+| `cookie(string $name, $default = null)`, `file(?string $key = null)` | Cookies; `$_FILES`-shaped upload entries |
+| `getAttribute(string $name, $default = null)`, `attributes(): array` | Values set by middleware/routing |
+| `ip(): ?string` | `REMOTE_ADDR` only — forwarded headers are deliberately not trusted |
+| `host(): string`, `scheme(): string`, `isSecure(): bool` | Client-supplied; do not build security-sensitive URLs from `host()` |
+| `isJson(): bool`, `wantsJson(): bool` | `Content-Type` / `Accept` is JSON |
+| `server(?string $key = null, $default = null)` | `$_SERVER` |
+
+Attributes set by the framework: each route parameter by name, `route` (the
+`Route`), `route.attributes`, `parsedBody`, `userContext`, `csrfToken`,
+`refreshToken`, `refreshTokenUserId`.
+
+### Response
+
+`new Response(int $statusCode = 200, string $body = '', array $headers = [])`,
+`new JsonResponse(mixed $data, int $statusCode = 200, array $headers = [])`,
+`new RedirectResponse(string $url, int $statusCode = 302)`,
+`RedirectResponse::local(string $path, int $statusCode = 302)` (throws on
+anything but a same-origin path — use it for any target that came from outside
+your code).
+
+Responses are immutable-style: `withStatus()`, `withHeader()`,
+`withoutHeader()`, `withBody()`, `withCookie()` return a modified copy —
+**use the return value**. `withCookie($name, $value, $options)` defaults to
+`secure: true, httponly: true, samesite: 'Lax', path: '/'`.
+
 ---
 
-## Request Handling
+## 8. Models, binding and validation
 
-### Request Class
-
-**Namespace:** `Melodic\Http\Request`
-
-The `Request` class is immutable — `withAttribute()` returns a new instance.
-
-**Construction:**
+`Melodic\Data\Model` is the base for every DTO: entity rows, request bodies,
+query-string filters. Properties are public and typed.
 
 ```php
-// Automatic capture from PHP superglobals
-$request = Request::capture();
+namespace MyApp\DTO;
 
-// Manual construction (for testing)
-$request = new Request(
-    server: ['REQUEST_METHOD' => 'POST', 'REQUEST_URI' => '/api/users'],
-    query: ['page' => '2'],
-    body: ['name' => 'Alice'],
-    headers: ['Content-Type' => 'application/json'],
-    attributes: [],
-    rawBody: '{"name":"Alice"}',
-    cookies: [],
-);
-```
+use Melodic\Data\Model;
+use Melodic\Validation\Rules\{Max, MaxLength, Min, Required};
 
-**Key methods:**
-
-| Method | Returns | Description |
-|---|---|---|
-| `method()` | `HttpMethod` | The HTTP method enum (GET, POST, PUT, DELETE, PATCH, OPTIONS) |
-| `path()` | `string` | The URL path (parsed from `REQUEST_URI`) |
-| `query(?string $key, mixed $default)` | `mixed` | Query string parameters; `null` key returns all |
-| `body(?string $key, mixed $default)` | `mixed` | Body parameters (form data or parsed JSON); `null` key returns all |
-| `header(string $name)` | `?string` | Case-insensitive header lookup |
-| `bearerToken()` | `?string` | Extracts token from `Authorization: Bearer <token>` header |
-| `getAttribute(string $name, mixed $default)` | `mixed` | Request attributes (set by middleware) |
-| `withAttribute(string $name, mixed $value)` | `Request` | Returns new request with added attribute (immutable) |
-| `cookie(string $name, mixed $default)` | `mixed` | Cookie value by name |
-| `rawBody()` | `string` | Raw request body string |
-
-**Body resolution:** The `body()` method first checks `$_POST` params. If empty, it falls back to the `parsedBody` attribute set by `JsonBodyParserMiddleware`. This means JSON request bodies are transparently available.
-
-### HttpMethod Enum
-
-**Namespace:** `Melodic\Http\HttpMethod`
-
-```php
-enum HttpMethod: string
-{
-    case GET = 'GET';
-    case POST = 'POST';
-    case PUT = 'PUT';
-    case DELETE = 'DELETE';
-    case PATCH = 'PATCH';
-    case OPTIONS = 'OPTIONS';
-
-    public static function parse(string $method): self; // throws ValueError if invalid
-}
-```
-
-### Automatic Model Binding
-
-When a controller action parameter is typed as a `Model` subclass, the `RoutingMiddleware` automatically:
-
-1. Hydrates the model from `$request->body()` via `Model::fromArray()`
-2. Validates it using the `Validator`
-3. If validation fails, returns a `400 JsonResponse` with error details — the controller is never called
-4. If validation passes, injects the populated model as the argument
-
-```php
-// Model with validation attributes
-class CreateUserRequest extends Model
+class CreateProductRequest extends Model
 {
     #[Required]
-    #[MaxLength(50)]
-    public string $username;
+    #[MaxLength(100)]
+    public string $Name;
 
     #[Required]
-    #[Email]
-    public string $email;
+    #[Min(0)]
+    public float $Price;
+
+    public bool $IsActive = true;          // optional, defaults when omitted
 }
 
-// Controller — $request is hydrated and validated automatically
-public function store(CreateUserRequest $request): JsonResponse
+class UpdateProductRequest extends Model   // partial update: everything nullable
 {
-    // $request->username and $request->email are populated and validated
+    #[MaxLength(100)]
+    public ?string $Name = null;
+
+    #[Min(0)]
+    public ?float $Price = null;
+
+    public ?bool $IsActive = null;
+}
+
+class PageRequest extends Model            // bound with #[FromQuery]
+{
+    #[Min(1)]
+    public int $Page = 1;
+
+    #[Min(1)]
+    #[Max(100)]
+    public int $PerPage = 25;
 }
 ```
 
-**Parameter resolution order in `RoutingMiddleware`:**
+### Property naming and JSON keys
 
-1. Route parameters matched by name (`{id}` → `$id`)
-2. Parameters typed as `Model` subclasses → hydrated from request body
-3. Parameters with default values → use the default
-4. Unresolvable parameters are skipped
+- **Input:** an incoming key is matched to a property as-is, then with its
+  first letter upper-cased, then fully upper-cased. So `name`, `Name` → `$Name`;
+  `ein` → `$EIN`. Unknown keys are ignored.
+- **Output:** `toArray()` / `json_encode($model)` lower-case the first letter
+  (`$UserName` → `userName`); an all-caps name is fully lower-cased (`$EIN` →
+  `ein`).
+- **Database:** a column hydrates the property with the **identical** name.
 
-### File Uploads
+Pick one convention and hold it. The framework's house style is PascalCase
+columns and properties (`Id`, `CreatedAt`) with camelCase JSON, which the rules
+above produce with no mapping code. If your schema is `snake_case`, name the
+properties `snake_case` too (`$created_at`) and the JSON keys will be
+`created_at`.
 
-File uploads are not handled by a dedicated framework abstraction. Access PHP's `$_FILES` superglobal directly or read the raw body.
+### Binding
+
+When an action parameter is a `Model`, the framework calls
+`Model::fromArray()` on the body (or query string):
+
+- Scalars are coerced to the declared type: `"5"` → `int`, `"true"`/`1`/`"on"`
+  → `bool`, numbers → `string`. Backed enums are built from their backing
+  value; `DateTime`/`DateTimeImmutable` from a date string; a nested `Model`
+  property from a nested object.
+- A value that cannot be coerced (`"abc"` for an `int`, a string for an
+  `array`, `null` for a non-nullable property, an unknown enum value) returns
+  **400** with `{"<field>": ["Field '<field>' must be an integer."]}` (dotted
+  path for nested models).
+- A property missing from the input keeps its declared default; a nullable
+  property without a default becomes `null`; a non-nullable property without a
+  default stays uninitialised — which is why mandatory fields carry
+  `#[Required]` (the validator reports it) and optional ones are nullable or
+  defaulted.
+- A plain `array` property receives the decoded array as-is. To get a list of
+  typed, validated models, declare the element type:
+
+  ```php
+  #[Required]
+  #[ListOf(OrderLineRequest::class)]      // Melodic\Data\ListOf
+  public array $Lines = [];
+  ```
+
+- `#[Guarded]` (`Melodic\Data\Guarded`) properties are never set from input.
+
+Useful `Model` methods:
+
+| Method | Returns |
+|---|---|
+| `Model::fromArray(array $data): static` | Hydrate + coerce (throws `ModelBindingException`) |
+| `toArray()` | Initialised properties, JSON-style keys, raw values |
+| `jsonSerialize()` | `toArray()` with `DateTime` as ISO-8601 — what `json()` emits |
+| `toPascalArray()` | Initialised properties keyed by **property name**, values made bindable (bool → int, enum → value, `DateTime` → `Y-m-d H:i:s`) — INSERT parameters |
+| `toUpdateArray()` | Only the properties **present in the input** (including explicit `null`), same conversion — PATCH/partial UPDATE parameters |
+| `wasProvided(string $property): bool` | Was this property in the input? |
+
+### Validation
+
+Runs automatically after binding. Failure returns **400** with every message,
+keyed by **property name**:
+
+```json
+{ "Name": ["This field is required"], "Price": ["Must be at least 0"] }
+```
+
+Nested models and `#[ListOf]` lists are validated too, with dotted keys
+(`Address.City`, `Lines.0.Quantity`).
+
+Rules (`Melodic\Validation\Rules\*`), each with an optional custom `message`:
+
+| Attribute | Passes when |
+|---|---|
+| `#[Required]` | not `null`, not blank string, not `[]` |
+| `#[Email]` | valid email |
+| `#[Url]` | absolute `http`/`https` URL |
+| `#[Uuid]` | canonical UUID |
+| `#[Date(format: 'Y-m-d')]` | string in exactly that format (use on `string` properties) |
+| `#[MinLength(n)]`, `#[MaxLength(n)]` | string length (multibyte-aware) |
+| `#[Min(n)]`, `#[Max(n)]` | numeric bounds |
+| `#[Pattern('/regex/')]` | regex matches |
+| `#[In([...])]` | **strictly** equal to one of the values — list values of the property's type |
+
+All except `#[Required]` pass on `null`. Custom rule:
+
+```php
+use Attribute;
+use Melodic\Validation\RuleInterface;
+
+#[Attribute(Attribute::TARGET_PROPERTY)]
+final class Sku implements RuleInterface
+{
+    public function __construct(public readonly string $message = 'Must be a valid SKU') {}
+
+    public function validate(mixed $value): bool
+    {
+        return $value === null || (is_string($value) && preg_match('/^[A-Z]{3}-\d{4}$/', $value) === 1);
+    }
+}
+```
+
+Rules that need the database or other fields (uniqueness, "end after start")
+belong in the service. Throw a `ValidationException` to answer 400 with the
+same field-keyed body as automatic validation:
+
+```php
+use Melodic\Validation\{ValidationException, ValidationResult};
+
+throw new ValidationException(ValidationResult::failure(['Email' => ['Already registered']]));
+```
+
+or throw `BadRequestException` / a domain exception mapped in a provider's
+`boot()` for errors that are not about one field.
+
+To validate outside a controller, inject `Melodic\Validation\Validator` and
+call `validate(object $dto): ValidationResult` (`->isValid`, `->errors`).
 
 ---
 
-## Response
-
-### Response Class
-
-**Namespace:** `Melodic\Http\Response`
-
-Responses are mutable-by-clone — `with*()` methods return new instances:
-
-```php
-$response = new Response(statusCode: 200, body: 'Hello', headers: ['Content-Type' => 'text/plain']);
-$response = $response->withStatus(201)->withHeader('X-Custom', 'value')->withBody('Created');
-```
-
-**Methods:**
-
-| Method | Returns | Description |
-|---|---|---|
-| `withStatus(int $code)` | `static` | Clone with new status code |
-| `withHeader(string $name, string $value)` | `static` | Clone with added/replaced header |
-| `withBody(string $body)` | `static` | Clone with new body |
-| `withCookie(string $name, string $value, array $options)` | `static` | Clone with set-cookie |
-| `getStatusCode()` | `int` | Current status code |
-| `getHeaders()` | `array` | All headers |
-| `getBody()` | `string` | Response body |
-| `send()` | `void` | Sends status code, headers, cookies, and body to the client |
-
-**Cookie options:** `expires`, `path` (default `/`), `domain`, `secure`, `httponly` (default `true`), `samesite` (default `Lax`).
-
-### JsonResponse
-
-**Namespace:** `Melodic\Http\JsonResponse`
-
-Extends `Response`. Automatically sets `Content-Type: application/json` and JSON-encodes the data:
-
-```php
-new JsonResponse($data, statusCode: 200, headers: []);
-```
-
-Uses `JSON_THROW_ON_ERROR` — throws `\JsonException` if encoding fails.
-
-### RedirectResponse
-
-**Namespace:** `Melodic\Http\RedirectResponse`
-
-Extends `Response`. Sets the `Location` header:
-
-```php
-new RedirectResponse('/dashboard', statusCode: 302);
-```
-
-### Controller Response Helpers
-
-The abstract `Controller` base class provides convenience methods:
-
-| Method | Status | Description |
-|---|---|---|
-| `json(mixed $data, int $statusCode = 200)` | 200 | JSON response |
-| `created(mixed $data, ?string $location = null)` | 201 | JSON response with optional Location header |
-| `noContent()` | 204 | Empty response |
-| `notFound(mixed $data = null)` | 404 | JSON error: `{"error": "Not Found"}` |
-| `badRequest(mixed $data = null)` | 400 | JSON error: `{"error": "Bad Request"}` |
-| `unauthorized(mixed $data = null)` | 401 | JSON error: `{"error": "Unauthorized"}` |
-| `forbidden(mixed $data = null)` | 403 | JSON error: `{"error": "Forbidden"}` |
-
-### Error Response Structure
-
-Error responses follow a consistent pattern:
-
-```json
-{"error": "Human-readable message"}
-```
-
-In debug mode, server errors (5xx) include additional diagnostic fields:
-
-```json
-{
-    "error": "Something went wrong",
-    "exception": "RuntimeException",
-    "file": "/app/src/Services/UserService.php",
-    "line": 42,
-    "trace": ["#0 ...", "#1 ..."]
-}
-```
-
-For validation errors (from model binding):
-
-```json
-{
-    "username": ["This field is required"],
-    "email": ["Must be a valid email address"]
-}
-```
-
----
-
-## Database & Persistence
+## 9. Data access: queries, commands, services
 
 ### DbContext
 
-**Namespace:** `Melodic\Data\DbContext` (implements `DbContextInterface`)
+`DbContextInterface` is the only door to the database. Bind one `DbContext`
+as a singleton ([section 5](#5-dependency-injection)).
 
-A thin PDO wrapper with model hydration support.
+| Method | Use |
+|---|---|
+| `query(string $class, string $sql, array $params = []): array` | Rows hydrated into `$class` |
+| `queryFirst(string $class, string $sql, array $params = []): ?object` | First row or `null` |
+| `scalar(string $sql, array $params = []): mixed` | First column of first row (`false` when no rows) |
+| `command(string $sql, array $params = []): int` | INSERT/UPDATE/DELETE → affected rows |
+| `lastInsertId(): int` | After an INSERT |
+| `transaction(callable $fn): mixed` | `fn(DbContextInterface $db)`; commits on return, rolls back on any exception; nested calls use savepoints |
+| `DbContext::cursor($class, $sql, $params): \Generator` | Stream rows (concrete class only — not on the interface) |
 
-**Construction:**
+- Hydration sets each column on the same-named property (private and inherited
+  properties included) **without calling the constructor**, casting to the
+  declared type: `int`, `float`, `bool` (driver forms like `"f"`, `"0"`
+  handled), `string`, backed enums, `DateTime`/`DateTimeImmutable`. Columns
+  without a matching property are ignored. Use `\stdClass::class` for ad-hoc
+  rows.
+- Parameters are normalised before binding: `bool` → `0/1`, backed enum → its
+  value, `DateTimeInterface` → `Y-m-d H:i:s`.
+- PDO runs in exception mode. Every named placeholder needs a value and every
+  value needs a placeholder.
 
-```php
-// From DSN string
-$db = new DbContext('mysql:host=localhost;dbname=myapp', 'user', 'pass', []);
+### Query and command classes
 
-// From existing PDO
-$db = new DbContext($pdo);
-```
-
-When constructing from a DSN, it sets `ERRMODE_EXCEPTION` and `FETCH_ASSOC`.
-
-**Methods:**
-
-| Method | Returns | Description |
-|---|---|---|
-| `query(string $class, string $sql, array $params = [])` | `array<T>` | Executes SQL and returns an array of hydrated model instances |
-| `queryFirst(string $class, string $sql, array $params = [])` | `?T` | Executes SQL and returns the first result, or `null` |
-| `command(string $sql, array $params = [])` | `int` | Executes a write SQL and returns affected row count |
-| `scalar(string $sql, array $params = [])` | `mixed` | Returns the first column of the first row |
-| `transaction(callable $callback)` | `mixed` | Wraps callback in `beginTransaction()`/`commit()` with auto-rollback |
-| `lastInsertId()` | `int` | Returns the last inserted ID as an integer |
-
-**Model hydration:**
-
-- Uses `ReflectionClass::newInstanceWithoutConstructor()` to create the model
-- Maps database columns to public properties by name
-- Casts values based on the property's type hint: `int`, `float`, `bool`, `string`
-- For `stdClass`, returns `(object) $row`
-
-**Transaction handling:**
+The SQL is assembled once in the constructor; `execute()` runs it.
 
 ```php
-$result = $db->transaction(function (DbContext $ctx) {
-    $ctx->command("INSERT INTO ...", [...]);
-    $ctx->command("UPDATE ...", [...]);
-    return $ctx->lastInsertId();
-});
-// Commits on success, rolls back on any Throwable
-```
+namespace MyApp\Data\Product\Queries;
 
-### DbContextInterface
+use Melodic\Data\DbContextInterface;
+use Melodic\Data\QueryInterface;
+use MyApp\DTO\ProductModel;
 
-```php
-interface DbContextInterface
+class GetProductByIdQuery implements QueryInterface
 {
-    /** @return T[] */
-    public function query(string $class, string $sql, array $params = []): array;
+    private readonly string $sql;
 
-    /** @return T|null */
-    public function queryFirst(string $class, string $sql, array $params = []): ?object;
+    public function __construct(private readonly int $id)
+    {
+        $this->sql = 'SELECT Id, Name, Price, IsActive, CreatedAt FROM products WHERE Id = :id';
+    }
 
-    public function command(string $sql, array $params = []): int;
+    public function getSql(): string
+    {
+        return $this->sql;
+    }
 
-    public function scalar(string $sql, array $params = []): mixed;
-
-    public function transaction(callable $callback): mixed;
-
-    public function lastInsertId(): int;
+    public function execute(DbContextInterface $context): ?ProductModel
+    {
+        return $context->queryFirst(ProductModel::class, $this->sql, ['id' => $this->id]);
+    }
 }
 ```
 
-### Registering the Database Connection
-
-In your `ServiceProvider` or bootstrap:
-
 ```php
-$container->singleton(DbContextInterface::class, function () use ($config) {
-    return new DbContext(
-        $config->get('database.dsn'),
-        $config->get('database.username'),
-        $config->get('database.password'),
-    );
-});
-```
+namespace MyApp\Data\Product\Commands;
 
-### Migrations
+use Melodic\Data\CommandInterface;
+use Melodic\Data\DbContextInterface;
+use MyApp\DTO\CreateProductRequest;
 
-The framework does not include a migration system. Use external tools or raw SQL scripts.
-
----
-
-## Models & Entities
-
-### Model Base Class
-
-**Namespace:** `Melodic\Data\Model` (implements `JsonSerializable`)
-
-Models are DTOs (Data Transfer Objects) with public properties. They extend `Model` for hydration, serialization, and validation support.
-
-```php
-class UserModel extends Model
+class CreateProductCommand implements CommandInterface
 {
-    public int $id;
-    public string $username;
-    public string $email;
-    public ?string $phone = null;
-    public bool $isActive;
+    private readonly string $sql;
+
+    public function __construct(private readonly CreateProductRequest $request)
+    {
+        $this->sql = 'INSERT INTO products (Name, Price, IsActive, CreatedAt)
+                      VALUES (:Name, :Price, :IsActive, :CreatedAt)';
+    }
+
+    public function getSql(): string
+    {
+        return $this->sql;
+    }
+
+    public function execute(DbContextInterface $context): int
+    {
+        return $context->command($this->sql, [
+            'Name' => $this->request->Name,
+            'Price' => $this->request->Price,
+            'IsActive' => $this->request->IsActive,
+            'CreatedAt' => new \DateTimeImmutable(),
+        ]);
+    }
 }
 ```
 
-**Key methods:**
+`QueryInterface::execute()` returns `mixed` — narrow it in your class
+(`?ProductModel`, `array`, `PaginatedResult`). `CommandInterface::execute()`
+returns the affected-row count.
 
-| Method | Returns | Description |
-|---|---|---|
-| `static fromArray(array $data)` | `static` | Hydrates a new instance from an associative array |
-| `toArray()` | `array` | Returns all initialized public properties with **camelCase** keys |
-| `toPascalArray()` | `array` | Returns all initialized properties with **PascalCase** keys; booleans → int |
-| `toUpdateArray()` | `array` | Returns only non-null properties with **PascalCase** keys; booleans → int |
-| `jsonSerialize()` | `mixed` | Delegates to `toArray()` for `json_encode()` |
-
-**`fromArray()` property matching:**
-1. Tries the key as-is (PascalCase columns from DB)
-2. Tries `ucfirst($key)` (camelCase keys from frontend JSON)
-3. After hydration, initializes any remaining **nullable** public properties to `null` (prevents uninitialized property errors)
-
-**`toPascalArray()` vs `toUpdateArray()`:**
-- `toPascalArray()` is for **INSERT** — includes all initialized properties (including null values)
-- `toUpdateArray()` is for **UPDATE** — only includes non-null properties (null means "not provided")
-- Both convert `bool` → `int` for PDO compatibility
-
-**Typical usage in commands:**
+**Partial updates** build the `SET` list from `toUpdateArray()`. Its keys are
+real property names of the DTO class (never raw input keys), so they are safe
+to use as column names:
 
 ```php
-// INSERT — use toPascalArray()
-$this->sql = "INSERT INTO users (Username, Email) VALUES (:Username, :Email)";
-$context->command($this->sql, $model->toPascalArray());
-
-// UPDATE — use toUpdateArray() for partial updates
-$context->command($this->sql, $model->toUpdateArray());
-```
-
-### Relationships
-
-Models are flat DTOs. There is no ORM or relationship mapping. To load related data, write separate queries and compose results in the service layer.
-
-### Validation at the Model Layer
-
-Validation is applied via PHP 8 attributes on model properties. See the [Validation](#validation) section for all available rules.
-
-```php
-class CreateUserRequest extends Model
+class UpdateProductCommand implements CommandInterface
 {
-    #[Required]
-    #[MinLength(3)]
-    #[MaxLength(50)]
-    public string $username;
+    private readonly string $sql;
 
-    #[Required]
-    #[Email]
-    public string $email;
-
-    #[Min(0)]
-    #[Max(150)]
-    public ?int $age = null;
-}
-```
-
----
-
-## Services
-
-### Service Base Class
-
-**Namespace:** `Melodic\Service\Service`
-
-The base class holds the database context(s):
-
-```php
-class Service
-{
+    /** @param array<string, mixed> $changes from UpdateProductRequest::toUpdateArray() */
     public function __construct(
-        protected readonly DbContextInterface $context,
-        protected readonly ?DbContextInterface $readOnlyContext = null,
-    ) {}
+        private readonly int $id,
+        private readonly array $changes,
+    ) {
+        $assignments = array_map(fn(string $column) => "{$column} = :{$column}", array_keys($this->changes));
+        $this->sql = 'UPDATE products SET ' . implode(', ', $assignments) . ' WHERE Id = :__id';
+    }
 
-    protected function getContext(): DbContextInterface { return $this->context; }
-    protected function getReadOnlyContext(): DbContextInterface { return $this->readOnlyContext ?? $this->context; }
-}
-```
-
-### Writing a Service
-
-Services are the business logic layer between controllers and data access (queries/commands):
-
-```php
-class UserService extends Service
-{
-    /** @return array<UserModel> */
-    public function getAll(): array
+    public function getSql(): string
     {
-        return (new GetAllUsersQuery())->execute($this->context);
+        return $this->sql;
     }
 
-    public function getById(int $id): ?UserModel
+    public function execute(DbContextInterface $context): int
     {
-        return (new GetUserByIdQuery($id))->execute($this->context);
+        return $context->command($this->sql, $this->changes + ['__id' => $this->id]);
     }
+}
+```
 
-    public function create(UserModel $model): int
+**Pagination** — `Melodic\Data\Paginator` inside a query. The SQL must have an
+`ORDER BY` and no `LIMIT`/`OFFSET`:
+
+```php
+public function execute(DbContextInterface $context): PaginatedResult
+{
+    return Paginator::paginate($context, ProductModel::class, $this->sql, [], $this->page, $this->perPage);
+}
+```
+
+`PaginatedResult` exposes `items`, `total`, `page`, `perPage`, `pageCount()`,
+`hasMore()` and serialises to `{items, total, page, perPage, pageCount}`.
+`$perPage` is clamped to `$maxPerPage` (default 100).
+
+### Services
+
+Business logic and transaction boundaries. Extend `Melodic\Service\Service`:
+it receives the `DbContextInterface` (`$this->context`) and an optional
+read-only context (`getReadOnlyContext()` falls back to the main one).
+
+```php
+namespace MyApp\Services;
+
+use Melodic\Data\DbContextInterface;
+use Melodic\Data\PaginatedResult;
+use Melodic\Service\Service;
+
+class ProductService extends Service
+{
+    /** @return PaginatedResult<ProductModel> */
+    public function getPage(int $page, int $perPage): PaginatedResult
     {
-        (new CreateUserCommand($model))->execute($this->context);
-        return $this->context->lastInsertId();
+        return (new GetProductsPageQuery($page, $perPage))->execute($this->getReadOnlyContext());
     }
 
-    public function update(int $id, UserModel $model): int
+    public function getById(int $id): ?ProductModel
     {
-        return (new UpdateUserCommand($id, $model))->execute($this->context);
+        return (new GetProductByIdQuery($id))->execute($this->getReadOnlyContext());
     }
 
-    public function delete(int $id): int
+    public function create(CreateProductRequest $request): ProductModel
     {
-        return (new DeleteUserCommand($id))->execute($this->context);
-    }
-}
-```
+        return $this->context->transaction(function (DbContextInterface $db) use ($request): ProductModel {
+            (new CreateProductCommand($request))->execute($db);
 
-### Registering Services
-
-Services are resolved via the DI container. If a service's constructor dependencies can be auto-wired, no explicit binding is needed. Otherwise, register in a `ServiceProvider`:
-
-```php
-$container->singleton(DbContextInterface::class, fn() => new DbContext($pdo));
-// UserService auto-wires: constructor takes DbContextInterface
-```
-
----
-
-## Dependency Injection
-
-### Container
-
-**Namespace:** `Melodic\DI\Container` (implements `ContainerInterface`)
-
-The container supports:
-- **Auto-wiring** — resolves constructor dependencies by type hint
-- **Interface binding** — maps an interface to a concrete class
-- **Singleton registration** — only instantiated once
-- **Instance registration** — pre-built objects
-- **Circular dependency detection** — throws `RuntimeException` with the full chain
-
-**Methods:**
-
-| Method | Description |
-|---|---|
-| `get(string $id)` | Resolves a class or binding. Auto-wires if no explicit binding exists. |
-| `has(string $id)` | Checks if a binding, instance, or class exists. |
-| `bind(string $abstract, string\|callable $concrete)` | Registers a transient binding (new instance each time). |
-| `singleton(string $abstract, string\|callable $concrete)` | Registers a singleton (cached after first resolution). |
-| `instance(string $abstract, object $instance)` | Registers a pre-built instance directly. |
-
-**Resolution order:**
-
-1. Check `$instances` (pre-registered or cached singletons)
-2. Check `$bindings` → build via callable or class name
-3. Fall back to auto-wiring via reflection
-
-**Auto-wiring rules:**
-
-- Only concrete, instantiable classes can be auto-wired
-- Constructor parameters with class/interface type hints are recursively resolved
-- Parameters with default values use the default if resolution fails
-- Builtin types without defaults throw `RuntimeException`
-- Circular dependencies are detected and reported with the full dependency chain
-
-**Callable bindings** receive the container as an argument:
-
-```php
-$container->singleton(DbContextInterface::class, function (Container $c) {
-    $config = $c->get(Configuration::class);
-    return new DbContext($config->get('database.dsn'));
-});
-```
-
-### ContainerInterface
-
-```php
-interface ContainerInterface
-{
-    public function get(string $id): mixed;
-    public function has(string $id): bool;
-    public function bind(string $abstract, string|callable $concrete): void;
-    public function singleton(string $abstract, string|callable $concrete): void;
-}
-```
-
-### ServiceProvider
-
-**Namespace:** `Melodic\DI\ServiceProvider`
-
-Abstract base class for modular service registration:
-
-```php
-abstract class ServiceProvider
-{
-    abstract public function register(Container $container): void;
-    public function boot(Container $container): void {} // optional post-registration hook
-}
-```
-
-- `register()` is called immediately when `$app->register($provider)` is invoked
-- `boot()` is called during `$app->run()`, after all providers have been registered
-- Use `register()` for binding definitions; use `boot()` for logic that depends on other services being registered
-
-**Built-in service providers:**
-- `EventServiceProvider` — registers `EventDispatcherInterface` → `EventDispatcher`
-- `SessionServiceProvider` — registers `SessionInterface` → `NativeSession`
-- `CacheServiceProvider` — registers `CacheInterface` → `FileCache`
-- `LoggingServiceProvider` — registers `LoggerInterface` → `FileLogger`
-- `SecurityServiceProvider` — registers all auth-related services
-
----
-
-## Middleware
-
-### MiddlewareInterface
-
-**Namespace:** `Melodic\Http\Middleware\MiddlewareInterface`
-
-```php
-interface MiddlewareInterface
-{
-    public function process(Request $request, RequestHandlerInterface $handler): Response;
-}
-```
-
-### RequestHandlerInterface
-
-```php
-interface RequestHandlerInterface
-{
-    public function handle(Request $request): Response;
-}
-```
-
-### Pipeline
-
-**Namespace:** `Melodic\Http\Middleware\Pipeline`
-
-Chains middleware into a handler stack. Middleware are called in the order they were piped:
-
-```php
-$pipeline = new Pipeline($finalHandler);
-$pipeline->pipe($middleware1);  // called first
-$pipeline->pipe($middleware2);  // called second
-$response = $pipeline->handle($request);
-```
-
-Internally, `buildHandler()` recursively wraps each middleware around the next, with the fallback handler at the end.
-
-### Global vs Route Middleware
-
-**Global middleware** — added via `$app->addMiddleware()`. Runs on every request.
-
-**Route middleware** — specified as class name strings on routes or groups. Resolved via DI container and run in a mini-pipeline after routing matches.
-
-### Execution Order
-
-1. `ErrorHandlerMiddleware` (always first — wraps everything)
-2. User-registered global middleware (in order of `addMiddleware()` calls)
-3. `RoutingMiddleware` (resolves the route, acts as the final handler)
-4. Route-level middleware (from group and route definitions)
-5. Controller action
-
-### Short-Circuiting
-
-Any middleware can return a `Response` directly without calling `$handler->handle($request)`:
-
-```php
-public function process(Request $request, RequestHandlerInterface $handler): Response
-{
-    if (!$this->isAuthorized($request)) {
-        return new JsonResponse(['error' => 'Forbidden'], 403);
-    }
-    return $handler->handle($request);
-}
-```
-
-### Built-in Middleware
-
-#### ErrorHandlerMiddleware
-
-Wraps the entire pipeline in a try/catch. Delegates to `ExceptionHandler` for error formatting.
-
-```php
-class ErrorHandlerMiddleware implements MiddlewareInterface
-{
-    public function __construct(LoggerInterface $logger, bool $debug = false) {}
-}
-```
-
-#### CorsMiddleware
-
-Handles CORS headers and preflight OPTIONS requests:
-
-```php
-$corsConfig = [
-    'allowedOrigins' => ['*'],
-    'allowedMethods' => ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    'allowedHeaders' => ['Content-Type', 'Authorization'],
-    'maxAge' => 86400,
-];
-$app->addMiddleware(new CorsMiddleware($corsConfig));
-```
-
-OPTIONS requests receive a `204` response immediately without proceeding through the rest of the pipeline.
-
-#### JsonBodyParserMiddleware
-
-Parses JSON request bodies and stores the result in the `parsedBody` request attribute:
-
-```php
-$app->addMiddleware(new JsonBodyParserMiddleware());
-```
-
-- Only parses if `Content-Type` contains `application/json`
-- Throws `BadRequestException` for invalid JSON
-- The parsed body is accessible via `$request->body()` (transparent fallback)
-
----
-
-## Validation
-
-### Validator
-
-**Namespace:** `Melodic\Validation\Validator`
-
-Validates objects or arrays against PHP 8 attribute rules on public properties:
-
-```php
-$validator = new Validator();
-
-// Validate an object
-$result = $validator->validate($model);
-
-// Validate raw array against a DTO class
-$result = $validator->validateArray($data, CreateUserRequest::class);
-```
-
-### ValidationResult
-
-```php
-class ValidationResult
-{
-    public readonly bool $isValid;
-    /** @var array<string, string[]> */
-    public readonly array $errors;
-
-    public static function success(): self;
-    public static function failure(array $errors): self;
-}
-```
-
-### ValidationException
-
-```php
-class ValidationException extends \RuntimeException
-{
-    public readonly ValidationResult $result;
-}
-```
-
-### Available Validation Rules
-
-All rules are PHP 8 attributes in `Melodic\Validation\Rules\`:
-
-| Rule | Parameters | Message | Behavior |
-|---|---|---|---|
-| `#[Required]` | `?string $message` | "This field is required" | Fails on `null`, empty string, or whitespace-only string |
-| `#[Email]` | `?string $message` | "Must be a valid email address" | Uses `FILTER_VALIDATE_EMAIL` |
-| `#[MaxLength(int $max)]` | `int $max, ?string $message` | "Must be no more than {max} characters" | `mb_strlen()` check; fails on non-string |
-| `#[MinLength(int $min)]` | `int $min, ?string $message` | "Must be at least {min} characters" | `mb_strlen()` check; fails on non-string |
-| `#[Max(int\|float $max)]` | `int\|float $max, ?string $message` | "Must be no more than {max}" | Numeric comparison; fails on non-numeric |
-| `#[Min(int\|float $min)]` | `int\|float $min, ?string $message` | "Must be at least {min}" | Numeric comparison; fails on non-numeric |
-| `#[In(array $values)]` | `array $values, ?string $message` | "Must be one of: {list}" | Strict `in_array()` check |
-| `#[Pattern(string $regex)]` | `string $regex, ?string $message` | "Must match the pattern {regex}" | `preg_match()` check; fails on non-string |
-
-All rules have a `$message` property (customizable via constructor) and a `validate(mixed $value): bool` method.
-
-### Automatic Validation (Model Binding)
-
-When controller action parameters are typed as `Model` subclasses, the `RoutingMiddleware` automatically validates them. If validation fails, a `400 JsonResponse` is returned:
-
-```json
-{
-    "username": ["This field is required", "Must be at least 3 characters"],
-    "email": ["Must be a valid email address"]
-}
-```
-
-### Manual Validation
-
-```php
-$validator = $container->get(Validator::class);
-$result = $validator->validate($model);
-
-if (!$result->isValid) {
-    return $this->badRequest($result->errors);
-}
-```
-
----
-
-## Authentication & Authorization
-
-The security system supports three authentication strategies: **OIDC**, **OAuth2**, and **local** (username/password with JWT). It supports both API (Bearer token) and web (cookie-based) authentication.
-
-### Architecture Overview
-
-```
-SecurityServiceProvider registers everything from config:
-  AuthConfig ← config.json "auth" section
-  AuthProviderRegistry ← contains OidcAuthProvider, OAuth2AuthProvider, LocalAuthProvider
-  JwtValidator ← validates tokens from any registered provider
-  SessionManager ← server-side session for OAuth state/CSRF
-  AuthCallbackMiddleware ← handles /auth/login, /auth/callback, /auth/logout
-
-API flow:  ApiAuthenticationMiddleware → validates Bearer token → sets UserContext
-Web flow:  WebAuthenticationMiddleware → validates cookie token → redirects to login if invalid
-```
-
-### Configuration
-
-Authentication is configured in the `auth` section of your JSON config:
-
-```json
-{
-    "auth": {
-        "api": { "enabled": true },
-        "web": { "enabled": true },
-        "loginPath": "/auth/login",
-        "callbackPath": "/auth/callback",
-        "postLoginRedirect": "/",
-        "cookieName": "melodic_auth",
-        "cookieLifetime": 3600,
-        "loginPage": {
-            "title": "Sign In",
-            "primaryColor": "#4a90d9",
-            "logoUrl": "/logo.png"
-        },
-        "local": {
-            "signingKey": "your-secret-key",
-            "issuer": "melodic-app",
-            "audience": "melodic-app",
-            "tokenLifetime": 3600,
-            "algorithm": "HS256"
-        },
-        "providers": {
-            "google": {
-                "type": "oidc",
-                "label": "Sign in with Google",
-                "discoveryUrl": "https://accounts.google.com/.well-known/openid-configuration",
-                "clientId": "...",
-                "clientSecret": "...",
-                "redirectUri": "https://myapp.com/auth/callback/google",
-                "audience": "...",
-                "scopes": "openid profile email"
-            },
-            "github": {
-                "type": "oauth2",
-                "label": "Sign in with GitHub",
-                "authorizeUrl": "https://github.com/login/oauth/authorize",
-                "tokenUrl": "https://github.com/login/oauth/access_token",
-                "userInfoUrl": "https://api.github.com/user",
-                "clientId": "...",
-                "clientSecret": "...",
-                "redirectUri": "https://myapp.com/auth/callback/github",
-                "scopes": "user:email",
-                "claimMap": { "sub": "id", "username": "login", "email": "email" }
-            },
-            "local": {
-                "type": "local",
-                "label": "Sign in with Email"
-            }
-        }
-    }
-}
-```
-
-### Auth Provider Types
-
-**`AuthProviderType` enum:**
-- `Oidc` — OpenID Connect (validates tokens via JWKS from discovery document)
-- `OAuth2` — Generic OAuth2 (authorization code flow, fetches user info, issues local JWT)
-- `Local` — Username/password (uses `LocalAuthenticatorInterface`, issues local JWT)
-
-### API Authentication
-
-**`ApiAuthenticationMiddleware`:**
-- Reads `Authorization: Bearer <token>` header
-- If `auth.api.enabled` is `false`, sets an anonymous `UserContext` and passes through
-- Validates the token via `JwtValidator` (tries local config first, then OIDC providers)
-- Sets `UserContext` on the request as the `userContext` attribute
-- Returns `401` if token is missing or invalid
-
-```php
-$app->addMiddleware($container->get(ApiAuthenticationMiddleware::class));
-```
-
-### Web Authentication
-
-**`WebAuthenticationMiddleware`:**
-- Reads the auth token from a cookie (configurable name, default `melodic_auth`)
-- If valid, sets `UserContext` and proceeds
-- If invalid or missing, saves the current path in session and redirects to login page
-- If `auth.web.enabled` is `false`, sets anonymous context and passes through
-
-**`OptionalWebAuthMiddleware`:**
-- Same as `WebAuthenticationMiddleware` but never redirects
-- Sets `UserContext::anonymous()` if no valid token is found
-- Use on pages that should work for both authenticated and anonymous users
-
-### Login Flow
-
-**`AuthCallbackMiddleware`** handles these routes:
-
-| Route | Method | Action |
-|---|---|---|
-| `/auth/login` | GET | Renders login page with all configured providers |
-| `/auth/login/{provider}` | GET | Initiates OAuth redirect for external providers |
-| `/auth/callback/{provider}` | GET/POST | Handles OAuth callback or local form POST |
-| `/auth/logout` | GET | Clears auth cookie and redirects to `/` |
-
-**OIDC flow:** Redirect to provider → callback with code → exchange for tokens → validate ID token via JWKS → set cookie
-
-**OAuth2 flow:** Redirect to provider → callback with code → exchange for access token → fetch user info → issue local JWT → set cookie
-
-**Local flow:** POST username/password → `LocalAuthenticatorInterface::authenticate()` → issue local JWT → set cookie
-
-### Authorization
-
-**`AuthorizationMiddleware`:**
-
-```php
-new AuthorizationMiddleware(
-    requiredEntitlements: ['admin', 'editor'], // user must have ANY of these
-    requireAuthentication: true,               // require authenticated user
-);
-```
-
-- Returns `401` if authentication is required but user is not authenticated
-- Returns `403` if user lacks all required entitlements
-- Uses `UserContextInterface::hasAnyEntitlement()` (OR logic)
-
-### UserContext
-
-**`UserContext`** (implements `UserContextInterface`):
-
-```php
-interface UserContextInterface
-{
-    public function isAuthenticated(): bool;
-    public function getUser(): ?User;
-    public function getUsername(): ?string;
-    public function hasEntitlement(string $entitlement): bool;
-    public function hasAnyEntitlement(string ...$entitlements): bool;
-    public function getClaim(string $key, mixed $default = null): mixed;
-    public function getClaims(): array;
-}
-```
-
-**`User` class:**
-```php
-class User
-{
-    public readonly string $id;
-    public readonly string $username;
-    public readonly string $email;
-    public readonly array $entitlements;
-}
-```
-
-**Accessing in controllers:**
-
-```php
-// In ApiController or MvcController
-$userContext = $this->getUserContext();
-$username = $userContext?->getUsername();
-if ($userContext?->hasEntitlement('admin')) { /* ... */ }
-```
-
-### JWT Validation
-
-**`JwtValidator`:**
-1. Peeks at the `iss` claim without full validation
-2. If issuer matches `LocalAuthConfig::$issuer`, validates with the local signing key
-3. Otherwise, tries each registered OIDC provider's JWKS keys
-4. Validates audience claims against provider configuration
-
-### CSRF Protection
-
-The `CsrfToken` class generates and validates tokens stored in the session. Used automatically by `AuthCallbackMiddleware` for local auth form POSTs.
-
-### Refresh Tokens
-
-The framework includes a complete refresh token system:
-
-- **`RefreshToken`** — immutable model with `userId`, `tokenHash`, `familyId`, `generation`, `expiresAt`, `revokedAt`
-- **`RefreshTokenService`** — creates, validates, rotates tokens with family-based reuse detection
-- **`RefreshTokenRepositoryInterface`** — storage interface (app must implement)
-- **`RefreshTokenMiddleware`** — validates refresh token cookie and sets request attributes
-- **`RefreshTokenCookieHelper`** — attaches/clears refresh token cookies on responses
-- **`RefreshTokenConfig`** — configurable lifetime, cookie name, domain, path, security settings
-
-**Reuse detection:** If a revoked token is presented, the entire token family is revoked (detecting token theft).
-
-### SecurityServiceProvider
-
-Registers all auth services as singletons. Uses the `auth` config section to configure providers, JWT validation, session management, and middleware.
-
-### Login Page Customization
-
-The `LoginPageConfig` class controls the built-in login page appearance:
-
-```json
-{
-    "loginPage": {
-        "title": "Sign In",
-        "primaryColor": "#4a90d9",
-        "primaryHoverColor": "#357abd",
-        "backgroundColor": "#f5f5f5",
-        "cardBackground": "#ffffff",
-        "textColor": "#333333",
-        "subtextColor": "#555555",
-        "logoUrl": "/images/logo.png",
-        "logoAlt": "My App",
-        "faviconUrl": "/favicon.ico",
-        "customCss": "body { font-family: 'Inter', sans-serif; }"
-    }
-}
-```
-
-You can replace the built-in renderer by binding your own `AuthLoginRendererInterface` implementation.
-
----
-
-## Events
-
-### Event System
-
-**Namespace:** `Melodic\Event`
-
-A simple, synchronous event dispatcher with priority support.
-
-### Event Base Class
-
-```php
-abstract class Event
-{
-    private bool $propagationStopped = false;
-
-    public function isPropagationStopped(): bool;
-    public function stopPropagation(): void;
-}
-```
-
-### EventDispatcherInterface
-
-```php
-interface EventDispatcherInterface
-{
-    public function dispatch(object $event): object;
-    public function listen(string $eventClass, callable $listener, int $priority = 0): void;
-}
-```
-
-### EventDispatcher
-
-```php
-$dispatcher->listen(UserCreatedEvent::class, function (UserCreatedEvent $e) {
-    // handle event
-}, priority: 10);
-
-$dispatcher->dispatch(new UserCreatedEvent($user));
-```
-
-- Listeners are sorted by priority (higher priority runs first, using `krsort`)
-- If an event extends `Event` and has `stopPropagation()` called, remaining listeners are skipped
-- Non-`Event` objects can be dispatched but cannot stop propagation
-
-### Registration
-
-```php
-$app->register(new EventServiceProvider());
-```
-
-This registers `EventDispatcherInterface` → `EventDispatcher` as a singleton.
-
----
-
-## Caching
-
-### CacheInterface
-
-**Namespace:** `Melodic\Cache\CacheInterface`
-
-```php
-interface CacheInterface
-{
-    public function get(string $key, mixed $default = null): mixed;
-    public function set(string $key, mixed $value, ?int $ttl = null): bool;
-    public function delete(string $key): bool;
-    public function has(string $key): bool;
-    public function clear(): bool;
-}
-```
-
-### Implementations
-
-**`FileCache`** — serializes entries to disk with TTL support:
-- Cache directory is created automatically
-- Files are named by `md5($key)`
-- Expired entries are cleaned up on read
-- `clear()` deletes all files in the cache directory
-
-```php
-$cache = new FileCache('/path/to/cache');
-```
-
-**`ArrayCache`** — in-memory cache (useful for testing):
-- Same interface, stores in a PHP array
-- Supports TTL via `time()` comparison
-- Data is lost when the process ends
-
-### Registration
-
-```php
-$app->register(new CacheServiceProvider($app->getBasePath() . '/storage/cache'));
-```
-
-This registers `CacheInterface` → `FileCache` as a singleton.
-
----
-
-## Sessions
-
-### SessionInterface
-
-**Namespace:** `Melodic\Session\SessionInterface`
-
-```php
-interface SessionInterface
-{
-    public function start(): void;
-    public function get(string $key, mixed $default = null): mixed;
-    public function set(string $key, mixed $value): void;
-    public function has(string $key): bool;
-    public function remove(string $key): void;
-    public function destroy(): void;
-    public function regenerate(bool $deleteOld = true): void;
-    public function isStarted(): bool;
-}
-```
-
-### Implementations
-
-**`NativeSession`** — wraps PHP's native session:
-- Auto-starts session on first `get()`/`set()`/`has()` call
-- Uses `$_SESSION` superglobal
-- `regenerate()` calls `session_regenerate_id()`
-- `destroy()` calls `session_destroy()` and clears `$_SESSION`
-
-**`ArraySession`** — in-memory session for testing:
-- Same interface, stores in a PHP array
-- `regenerate()` is a no-op
-
-### SessionManager
-
-**Namespace:** `Melodic\Security\SessionManager`
-
-The `SessionManager` in the Security namespace implements `SessionInterface` and is used specifically by the auth system. It wraps PHP's native session with the same behavior as `NativeSession`.
-
-### Registration
-
-```php
-$app->register(new SessionServiceProvider());
-```
-
-This registers `SessionInterface` → `NativeSession` as a singleton.
-
----
-
-## Logging
-
-### LoggerInterface
-
-**Namespace:** `Melodic\Log\LoggerInterface`
-
-```php
-interface LoggerInterface
-{
-    public function emergency(string $message, array $context = []): void;
-    public function alert(string $message, array $context = []): void;
-    public function critical(string $message, array $context = []): void;
-    public function error(string $message, array $context = []): void;
-    public function warning(string $message, array $context = []): void;
-    public function notice(string $message, array $context = []): void;
-    public function info(string $message, array $context = []): void;
-    public function debug(string $message, array $context = []): void;
-    public function log(LogLevel $level, string $message, array $context = []): void;
-}
-```
-
-### LogLevel Enum
-
-```php
-enum LogLevel: string
-{
-    case EMERGENCY = 'emergency'; // severity 0
-    case ALERT     = 'alert';     // severity 1
-    case CRITICAL  = 'critical';  // severity 2
-    case ERROR     = 'error';     // severity 3
-    case WARNING   = 'warning';   // severity 4
-    case NOTICE    = 'notice';    // severity 5
-    case INFO      = 'info';      // severity 6
-    case DEBUG     = 'debug';     // severity 7
-}
-```
-
-### Implementations
-
-**`FileLogger`** — writes daily log files:
-- File naming: `melodic-YYYY-MM-DD.log`
-- Minimum level filtering (messages below minimum are discarded)
-- Message interpolation: `{key}` placeholders replaced from context
-- Exception formatting: if `$context['exception']` is a `Throwable`, appends class, message, file:line, and trace
-- Uses `FILE_APPEND | LOCK_EX` for safe concurrent writes
-- Silent failure: logger never crashes the application
-
-```
-[2026-03-21 14:30:00] ERROR: Failed to process order {orderId}
-  Exception: RuntimeException
-  Message: Connection refused
-  At: /app/src/Services/OrderService.php:42
-  Trace:
-    #0 /app/src/Controllers/OrderController.php(28): ...
-```
-
-**`NullLogger`** — discards all messages (default when no logger is registered).
-
-### Registration
-
-```php
-$app->register(new LoggingServiceProvider());
-```
-
-Reads `logging.path` and `logging.level` from config. Defaults to `$basePath/logs` and `debug`.
-
-### Configuration
-
-```json
-{
-    "logging": {
-        "path": "storage/logs",
-        "level": "warning"
-    }
-}
-```
-
----
-
-## Error Handling
-
-### ExceptionHandler
-
-**Namespace:** `Melodic\Error\ExceptionHandler`
-
-Converts exceptions to HTTP responses with content negotiation (JSON vs HTML).
-
-**Status code resolution:**
-
-| Exception Type | Status Code |
-|---|---|
-| `HttpException` | Uses `getStatusCode()` |
-| `SecurityException` | 401 |
-| `\JsonException` | 400 |
-| Everything else | 500 |
-
-**Content negotiation:** Returns JSON if:
-- `Accept` header contains `application/json`, OR
-- `Content-Type` header contains `application/json`, OR
-- Request path starts with `/api`
-
-**Debug mode:**
-- When `app.debug` is `true`: 5xx errors include exception class, file, line, and trace
-- When `false`: 5xx errors show generic "An internal server error occurred."
-- 4xx errors always show the exception message
-
-**Logging:**
-- 5xx → `$logger->error()`
-- 4xx → `$logger->warning()`
-- Context includes: exception object, status code, HTTP method, path
-
-### ErrorHandlerMiddleware
-
-```php
-class ErrorHandlerMiddleware implements MiddlewareInterface
-{
-    public function __construct(ExceptionHandler $exceptionHandler) {}
-}
-```
-
-Wraps the entire middleware pipeline. Catches any `\Throwable` and delegates to `ExceptionHandler`. The handler is resolved from the DI container so any mappers registered during boot are visible.
-
-### Custom Exception Mapping
-
-Apps can register closures that map a specific exception class (or its subclasses) to a custom Response — useful for domain exceptions like `PlanLimitExceededException → 402` with a structured payload, without try/catching at every controller call site.
-
-```php
-class AppServiceProvider extends ServiceProvider
-{
-    public function boot(Container $c): void
-    {
-        $handler = $c->get(ExceptionHandler::class);
-
-        $handler->registerMapper(PlanLimitExceededException::class, function (\Throwable $e) {
-            return new JsonResponse([
-                'code' => 'plan_limit_exceeded',
-                'message' => $e->getMessage(),
-                'limit' => $e->limit,
-            ], 402);
+            return (new GetProductByIdQuery($db->lastInsertId()))->execute($db);
         });
     }
+
+    public function update(int $id, UpdateProductRequest $request): ?ProductModel
+    {
+        $changes = $request->toUpdateArray();
+
+        if ($changes !== []) {
+            (new UpdateProductCommand($id, $changes))->execute($this->context);
+        }
+
+        return $this->getById($id);
+    }
+
+    public function delete(int $id): bool
+    {
+        return (new DeleteProductCommand($id))->execute($this->context) > 0;
+    }
 }
 ```
 
-**Mapper signature:** `fn(\Throwable $e, Request $request): Response`
-
-**Dispatch rules:**
-- The default `logException()` runs first, so observability is preserved regardless of mapper
-- Mappers are walked in registration order; **first `is_a` match wins** (subclasses match parent registrations)
-- Returning a Response short-circuits the default JSON/HTML formatting entirely
-- If no mapper matches, the request falls through to the default `HttpException` / `SecurityException` / `\JsonException` / 500 path with byte-identical behavior
-
-The handler is bound as a singleton in the container before `ServiceProvider::boot()` runs, so registrations from `boot()` are visible to both `ErrorHandlerMiddleware` and `Application`'s last-resort catch.
-
-### HTTP Exceptions
-
-**`HttpException`** (base class):
-```php
-class HttpException extends \RuntimeException
-{
-    public function __construct(int $statusCode, string $message = '', ?\Throwable $previous = null);
-    public function getStatusCode(): int;
-
-    // Static factories
-    public static function notFound(string $message = 'Not Found'): self;
-    public static function forbidden(string $message = 'Forbidden'): self;
-    public static function badRequest(string $message = 'Bad Request'): self;
-    public static function methodNotAllowed(string $message = 'Method Not Allowed'): self;
-}
-```
-
-**Specific exceptions:**
-- `BadRequestException` — 400
-- `NotFoundException` — 404
-- `MethodNotAllowedException` — 405
-
-### SecurityException
-
-```php
-class SecurityException extends \RuntimeException {}
-```
-
-Automatically resolves to HTTP 401.
+A service that needs more collaborators declares its own constructor and calls
+`parent::__construct($context)`. A service with no database work does not need
+to extend `Service` at all. Auto-wiring passes the same `DbContextInterface`
+binding for both contexts; to send reads to a replica, register the service
+with a factory that supplies a second `DbContext`.
 
 ---
 
-## View Engine (MVC)
+## 10. Views (MVC)
 
-### ViewEngine
-
-**Namespace:** `Melodic\View\ViewEngine`
-
-Renders `.phtml` templates with layout support and named sections.
+Templates are plain `.phtml` files under `views/`. `Application` binds a
+`ViewEngine` for that directory (override with `views.path`), so
+`MvcController` subclasses work with no extra registration.
 
 ```php
-$viewEngine = new ViewEngine(
-    viewsPath: '/path/to/views',
-    cache: $cacheInstance, // optional CacheInterface
-);
+namespace MyApp\Controllers;
+
+use Melodic\Controller\MvcController;
+use Melodic\Http\Response;
+
+class CatalogController extends MvcController
+{
+    public function __construct(
+        \Melodic\View\ViewEngine $viewEngine,
+        private readonly ProductService $products,
+    ) {
+        parent::__construct($viewEngine);
+    }
+
+    public function show(int $id): Response
+    {
+        $product = $this->products->getById($id);
+
+        if ($product === null) {
+            throw new \Melodic\Http\Exception\NotFoundException('Product not found');
+        }
+
+        $this->viewBag->title = $product->Name;
+        $this->setLayout('layouts/main');
+
+        return $this->view('catalog/show', ['product' => $product]);
+    }
+}
 ```
 
-**Methods:**
+`views/layouts/main.phtml`:
 
-| Method | Description |
-|---|---|
-| `render(string $template, array $data, ?string $layout)` | Renders template with optional layout |
-| `renderCached(string $template, array $data, ?string $layout, int $ttl)` | Cached rendering (uses CacheInterface) |
-| `renderBody()` | Called in layouts to output the page content |
-| `renderSection(string $name)` | Called in layouts to output a named section |
-| `beginSection(string $name)` | Starts capturing a named section (in templates) |
-| `endSection()` | Ends the current section capture |
-
-**How rendering works:**
-
-1. Template is rendered first — sections are captured via `beginSection()`/`endSection()`
-2. Template output becomes the "body"
-3. Layout is rendered — calls `renderBody()` for main content and `renderSection()` for named sections
-
-**Template example (`views/home/index.phtml`):**
-```php
-<h1><?= htmlspecialchars($heading) ?></h1>
-<p>Welcome to the site.</p>
-
-<?php $this->beginSection('scripts') ?>
-<script src="/app.js"></script>
-<?php $this->endSection() ?>
-```
-
-**Layout example (`views/layouts/main.phtml`):**
 ```php
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title><?= htmlspecialchars($viewBag->title ?? 'App') ?></title>
+    <meta charset="UTF-8">
+    <title><?= $this->e($viewBag->title ?? 'My App') ?></title>
     <?= $this->renderSection('head') ?>
 </head>
 <body>
+    <?= $this->partial('shared/nav') ?>
     <main><?= $this->renderBody() ?></main>
     <?= $this->renderSection('scripts') ?>
 </body>
 </html>
 ```
 
-**Template data:** Variables from the `$data` array are extracted into the template scope with `extract()`. The `ViewEngine` instance is accessible as `$this`.
-
-### ViewBag
-
-**Namespace:** `Melodic\View\ViewBag`
-
-A dynamic key-value store using `__get`/`__set` magic methods:
+`views/catalog/show.phtml`:
 
 ```php
-$viewBag = new ViewBag();
-$viewBag->title = 'Home Page';
-$viewBag->user = $currentUser;
-echo $viewBag->title;        // 'Home Page'
-echo $viewBag->nonexistent;  // null (no error)
-isset($viewBag->title);      // true
+<h1><?= $this->e($product->Name) ?></h1>
+<p><?= $this->e(number_format($product->Price, 2)) ?></p>
+
+<form method="post" action="/cart">
+    <?= $csrfField ?? '' ?>
+    <input type="hidden" name="productId" value="<?= $this->e((string) $product->Id) ?>">
+    <button type="submit">Add to cart</button>
+</form>
+
+<?php $this->beginSection('scripts') ?>
+<script src="/js/product.js"></script>
+<?php $this->endSection() ?>
 ```
 
-### MvcController
+Inside a template, `$this` is the `ViewEngine`:
 
-```php
-class MvcController extends Controller
-{
-    protected ViewBag $viewBag;
-    protected ?string $layout = null;
-
-    public function __construct(private readonly ViewEngine $viewEngine) {}
-
-    protected function view(string $template, array $data = []): Response;
-    public function viewBag(): ViewBag;
-    public function setLayout(string $layout): void;
-    protected function getUserContext(): ?UserContextInterface;
-}
-```
-
-**Usage:**
-
-```php
-class HomeController extends MvcController
-{
-    public function index(): Response
-    {
-        $this->viewBag->title = 'Home';
-        $this->setLayout('layouts/main');
-
-        return $this->view('home/index', [
-            'heading' => 'Welcome',
-        ]);
-    }
-}
-```
-
-The `view()` method automatically adds `$viewBag` to the template data.
-
----
-
-## Console & CLI
-
-### Console
-
-**Namespace:** `Melodic\Console\Console`
-
-The CLI application runner:
-
-```php
-$console = new Console();
-$console->setName('My App');
-$console->setVersion('1.0.0'); // defaults to Framework::VERSION
-$console->register(new RouteListCommand($router));
-$console->register(new CacheClearCommand($cache));
-exit($console->run($argv));
-```
-
-**Behavior:**
-- First argument is the command name: `php bin/console route:list`
-- `help` or no argument shows available commands
-- Unknown commands show error + help
-- Returns exit code (0 = success, 1 = error)
-
-### Command Base Class
-
-```php
-abstract class Command implements CommandInterface
-{
-    public function __construct(string $name, string $description) {}
-
-    abstract public function execute(array $args): int;
-
-    protected function writeln(string $text): void;  // stdout + newline
-    protected function write(string $text): void;     // stdout
-    protected function error(string $text): void;     // stderr
-    protected function table(array $headers, array $rows): void; // formatted table
-}
-```
-
-### Built-in Commands
-
-| Command | Description |
+| Call | Purpose |
 |---|---|
-| `route:list` | Lists all registered routes in a table |
-| `cache:clear` | Clears the application cache |
-| `claude:install` | Installs Claude Code agents and skills |
-| `make:entity <Name>` | Generates 8 CQRS files for an entity |
-| `make:project <name> [--type=full\|api\|mvc]` | Scaffolds a new project |
-| `make:config <environment>` | Creates an environment config file |
+| `$this->e(?string $value)` | HTML-escape. **Required for every dynamic value** — output is not auto-escaped. Cast non-strings |
+| `$this->renderBody()` | In a layout: the rendered view |
+| `$this->beginSection('name')` … `$this->endSection()` | In a view: capture a block |
+| `$this->renderSection('name')` | In a layout: output a block (empty string if undefined) |
+| `$this->partial('path', $data = [])` | Render another template inline |
 
-### make:entity
-
-Generates all files for a CQRS entity:
-
-```bash
-vendor/bin/melodic make:entity Church
-```
-
-Creates:
-1. `src/DTO/ChurchModel.php` — Model with `id` property
-2. `src/Data/Church/Queries/GetAllChurchesQuery.php` — Get all query
-3. `src/Data/Church/Queries/GetChurchByIdQuery.php` — Get by ID query
-4. `src/Data/Church/Commands/CreateChurchCommand.php` — Create command
-5. `src/Data/Church/Commands/UpdateChurchCommand.php` — Update command
-6. `src/Data/Church/Commands/DeleteChurchCommand.php` — Delete command
-7. `src/Services/ChurchService.php` — Full CRUD service
-8. `src/Controllers/ChurchController.php` — Full CRUD API controller
-
-Uses `Stub` helper for pluralization, case conversion, and template rendering.
-
-### make:project
-
-Scaffolds a new application with three project types:
-- `full` (default) — MVC views + API routing
-- `api` — API-only (no views directory)
-- `mvc` — MVC-only
-
-```bash
-vendor/bin/melodic make:project my-app --type=api
-```
-
-Creates: composer.json, config files, public/index.php, .htaccess, .gitignore, bin/console, AppServiceProvider, and (for MVC) HomeController with layout and view templates.
-
-### Stub Helper
-
-**Namespace:** `Melodic\Console\Make\Stub`
-
-Utility class for code generation:
-
-| Method | Description | Example |
-|---|---|---|
-| `render(string $template, array $replacements)` | Replaces `{key}` placeholders | `{entity}` → `Church` |
-| `pascalCase(string $input)` | Converts to PascalCase | `church_group` → `ChurchGroup` |
-| `camelCase(string $input)` | Converts to camelCase | `church_group` → `churchGroup` |
-| `snakeCase(string $input)` | Converts to snake_case | `ChurchGroup` → `church_group` |
-| `pluralize(string $word)` | English pluralization | `Church` → `Churches`, `Person` → `People` |
-
-Pluralization handles: irregular words, words ending in s/sh/ch/x/z (→ es), consonant+y (→ ies), f/fe (→ ves), and default (→ s).
+- Template names are paths relative to the views directory, without `.phtml`.
+- Variables: every key of the `$data` array, plus `$viewBag` (the controller's
+  `ViewBag`), plus `$csrfToken` / `$csrfField` when `CsrfMiddleware` is
+  active. `$csrfField` is ready-made HTML — print it unescaped.
+- `ViewEngine::renderCached($template, $data, $layout, $ttl)` caches output
+  when a `CacheInterface` is bound.
+- Throw `NotFoundException` (or any `HttpException`) from an MVC action to get
+  the framework's HTML error page.
 
 ---
 
-## Testing
+## 11. Authentication and authorization
 
-### Test Configuration
+Register `Melodic\Security\SecurityServiceProvider`. It reads the `auth`
+config section and binds the validator, providers and middleware as
+singletons. Tokens are JWTs: bearer tokens for APIs, an HttpOnly cookie for
+browser sessions.
 
-Tests use PHPUnit 11.0+ with the standard configuration:
+### Config
 
-```xml
-<phpunit bootstrap="vendor/autoload.php" colors="true">
-    <testsuites>
-        <testsuite name="default">
-            <directory>tests</directory>
-        </testsuite>
-    </testsuites>
-    <source>
-        <include>
-            <directory>src</directory>
-        </include>
-    </source>
-</phpunit>
-```
-
-**Test namespace:** `Tests\` maps to `tests/` (PSR-4).
-
-### Test Structure
-
-Tests mirror the source directory structure:
-
-```
-tests/
-├── Cache/          CacheInterface tests (FileCache, ArrayCache)
-├── Console/        Console, Command, Stub tests
-├── Controller/     Controller response helper tests
-├── Core/           Application, Configuration tests
-├── Data/           DbContext, Model tests
-├── DI/             Container, ServiceProvider tests
-├── Error/          ExceptionHandler tests
-├── Event/          EventDispatcher tests
-├── Http/           Request, Response, Middleware tests
-├── Log/            Logger tests
-├── Routing/        Route, Router tests
-├── Security/       Auth middleware, JWT, UserContext tests
-├── Service/        Service base class tests
-├── Session/        Session tests
-└── Validation/     Validator, validation rules tests
-```
-
-### Testing Patterns
-
-**Testing queries and commands:**
-
-```php
-// Create a real or mock DbContext
-$pdo = new PDO('sqlite::memory:');
-$pdo->exec('CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT)');
-$context = new DbContext($pdo);
-
-// Test a query
-$query = new GetUserByIdQuery(1);
-$result = $query->execute($context);
-$this->assertNull($result);
-```
-
-**Testing services:**
-
-```php
-$context = new DbContext($pdo);
-$service = new UserService($context);
-$users = $service->getAll();
-$this->assertIsArray($users);
-```
-
-**Testing controllers:**
-
-```php
-$controller = new UserController($userService);
-$controller->setRequest(new Request(...));
-$response = $controller->index();
-$this->assertEquals(200, $response->getStatusCode());
-```
-
-**Testing middleware:**
-
-```php
-$middleware = new CorsMiddleware(['allowedOrigins' => ['https://example.com']]);
-$handler = new class implements RequestHandlerInterface {
-    public function handle(Request $request): Response {
-        return new Response(200);
-    }
-};
-$response = $middleware->process($request, $handler);
-$this->assertStringContainsString('https://example.com', $response->getHeaders()['Access-Control-Allow-Origin']);
-```
-
-**Testing validation:**
-
-```php
-$validator = new Validator();
-$model = UserModel::fromArray(['username' => '', 'email' => 'invalid']);
-$result = $validator->validate($model);
-$this->assertFalse($result->isValid);
-$this->assertArrayHasKey('username', $result->errors);
-```
-
-**`ArrayCache` and `ArraySession`** are available as test doubles for `CacheInterface` and `SessionInterface`.
-
-### Running Tests
-
-```bash
-composer test           # or: vendor/bin/phpunit
-vendor/bin/phpstan analyse   # static analysis (level 6)
-```
-
----
-
-## Best Practices
-
-### Naming Conventions
-
-| Type | Location | Pattern | Example |
-|---|---|---|---|
-| DTO / Model | `src/DTO/` | `{Entity}Model` | `ChurchModel` |
-| Query | `src/Data/{Entity}/Queries/` | `Get{Entity}ByIdQuery`, `GetAll{Plural}Query` | `GetChurchByIdQuery` |
-| Command | `src/Data/{Entity}/Commands/` | `Create{Entity}Command`, `Update{Entity}Command` | `CreateChurchCommand` |
-| Service | `src/Services/` | `{Entity}Service` | `ChurchService` |
-| Controller | `src/Controllers/` | `{Entity}Controller` | `ChurchController` |
-| Service Provider | `src/Providers/` | `{Name}ServiceProvider` | `AppServiceProvider` |
-| Middleware | `src/Middleware/` | `{Purpose}Middleware` | `RateLimitMiddleware` |
-
-### End-to-End Feature Structure
-
-To add a new `Order` feature:
-
-1. **Model** — `src/DTO/OrderModel.php` extending `Model`
-2. **Queries** — `src/Data/Order/Queries/GetAllOrdersQuery.php`, `GetOrderByIdQuery.php`
-3. **Commands** — `src/Data/Order/Commands/CreateOrderCommand.php`, `UpdateOrderCommand.php`, `DeleteOrderCommand.php`
-4. **Service** — `src/Services/OrderService.php` extending `Service`
-5. **Controller** — `src/Controllers/OrderController.php` extending `ApiController`
-6. **Routes** — `$router->apiResource('/api/orders', OrderController::class)`
-
-Or use the scaffold: `vendor/bin/melodic make:entity Order`
-
-### What Belongs Where
-
-| Concern | Location |
-|---|---|
-| SQL and database access | Query/Command classes |
-| Business logic, orchestration | Service classes |
-| HTTP input/output | Controllers |
-| Cross-cutting concerns | Middleware |
-| Configuration, service wiring | ServiceProvider |
-| Data validation rules | Attributes on Model properties |
-
-### Anti-Patterns
-
-- **No direct DB in controllers** — always go through a service
-- **No business logic in queries/commands** — they are pure data access; logic belongs in services
-- **No mediator** — instantiate queries/commands directly in services
-- **No facades** — use constructor injection
-- **No magic** — explicit, direct code paths
-- **Keep controllers thin** — delegate to services, return responses
-- **Keep services focused** — one entity per service, compose services for cross-entity operations
-
-### Code Style
-
-- `declare(strict_types=1)` in every PHP file
-- PHP 8.2+ features: enums, readonly properties, constructor promotion, match expressions, named arguments
-- PascalCase classes, camelCase methods/properties
-- Use `Model::toPascalArray()` for INSERT params, `Model::toUpdateArray()` for UPDATE params
-
----
-
-## Extension Points
-
-### Adding Middleware
-
-1. Create a class implementing `MiddlewareInterface`:
-
-```php
-class RateLimitMiddleware implements MiddlewareInterface
+```json
 {
-    public function process(Request $request, RequestHandlerInterface $handler): Response
-    {
-        if ($this->isRateLimited($request)) {
-            return new JsonResponse(['error' => 'Rate limit exceeded'], 429);
+    "auth": {
+        "loginPath": "/auth/login",
+        "callbackPath": "/auth/callback",
+        "postLoginRedirect": "/",
+        "cookieName": "melodic_auth",
+        "cookieLifetime": 3600,
+        "local": {
+            "signingKey": "${AUTH_SIGNING_KEY}",
+            "issuer": "my-app",
+            "audience": "my-app",
+            "tokenLifetime": 3600
+        },
+        "providers": {
+            "entra": {
+                "type": "oidc",
+                "label": "Sign in with Microsoft",
+                "discoveryUrl": "https://login.microsoftonline.com/<tenant>/v2.0/.well-known/openid-configuration",
+                "clientId": "${ENTRA_CLIENT_ID}",
+                "clientSecret": "${ENTRA_CLIENT_SECRET}",
+                "redirectUri": "https://app.example.com/auth/callback/entra",
+                "claimMap": { "entitlements": "roles", "username": "preferred_username" }
+            },
+            "password": { "type": "local", "label": "Sign in" }
         }
-        return $handler->handle($request);
     }
 }
 ```
 
-2. Register globally or per-route:
+- Provider `type` is `oidc` (discovery + JWKS, PKCE, nonce; the id_token is
+  the session token), `oauth2` (`authorizeUrl` / `tokenUrl` / `userInfoUrl`,
+  PKCE; a local JWT is issued) or `local` (username/password form; a local JWT
+  is issued).
+- `oauth2` and `local` providers **require `auth.local`**, and an `HS*`
+  signing key must be at least 32 characters (`openssl rand -base64 48`).
+- A `local` provider needs your authenticator bound **before** the app
+  resolves any auth middleware:
+
+  ```php
+  $container->bind(LocalAuthenticatorInterface::class, DatabaseAuthenticator::class);
+  ```
+
+  `authenticate(string $username, string $password): array` returns claims
+  (`sub`, `username`, `email`, optional `entitlements`) or throws
+  `SecurityException`.
+- Other keys: `auth.api.enabled` / `auth.web.enabled` (default `true`; `false`
+  makes the matching middleware pass everyone as anonymous),
+  `auth.cookieSecure` / `cookieSameSite` / `cookiePath` / `cookieDomain`,
+  `auth.oidcCacheDir`, `auth.providers.<name>.audience` / `scopes` /
+  `signingAlg`, `auth.loginPage.*` (title, colours, logo), and
+  `auth.refreshToken.*`.
+
+### Middleware
+
+| Class | Behaviour |
+|---|---|
+| `ApiAuthenticationMiddleware` | Requires `Authorization: Bearer <jwt>`. Missing/invalid → 401 JSON. Sets `userContext` |
+| `WebAuthenticationMiddleware` | Requires a valid auth cookie; otherwise remembers the URL and redirects to the login page. Sets `userContext` |
+| `OptionalWebAuthMiddleware` | Sets `userContext` from the cookie if valid, anonymous otherwise; never blocks |
+| `AuthCallbackMiddleware` | Serves `GET {loginPath}`, `GET {loginPath}/{provider}`, `GET|POST {callbackPath}/{provider}` and `POST /auth/logout` |
+| `AuthorizationMiddleware` | Requires an authenticated user (401) holding **any** of the route's `entitlements` (403) |
+| `CsrfMiddleware` | CSRF check for non-API state-changing requests |
+| `RefreshTokenMiddleware` | Validates the refresh-token cookie on your refresh endpoint |
+
+Apply authentication to route groups, not globally — a global
+`ApiAuthenticationMiddleware` would reject your public pages, and a global
+`WebAuthenticationMiddleware` would redirect the login page to itself:
 
 ```php
-// Global
-$app->addMiddleware(new RateLimitMiddleware());
+$c = $app->getContainer();
 
-// Per-route
-$router->get('/api/search', SearchController::class, 'index', [RateLimitMiddleware::class]);
-```
+$app->addMiddleware(new JsonBodyParserMiddleware());
+$app->addMiddleware($c->get(CsrfMiddleware::class));          // MVC apps
+$app->addMiddleware($c->get(AuthCallbackMiddleware::class));  // browser login/logout
 
-### Registering Services
+$app->routes(function (Router $router): void {
+    $router->get('/', HomeController::class, 'index',
+        middleware: [OptionalWebAuthMiddleware::class]);
 
-Create a `ServiceProvider`:
+    $router->group('/account', function (Router $router): void {
+        $router->get('', AccountController::class, 'index');
+    }, middleware: [WebAuthenticationMiddleware::class]);
 
-```php
-class MailServiceProvider extends ServiceProvider
-{
-    public function register(Container $container): void
-    {
-        $container->singleton(MailerInterface::class, function (Container $c) {
-            $config = $c->get(Configuration::class);
-            return new SmtpMailer($config->get('mail'));
-        });
-    }
-}
-```
+    $router->group('/api', function (Router $router): void {
+        $router->apiResource('/products', ProductController::class);
 
-Register it:
-
-```php
-$app->register(new MailServiceProvider());
-```
-
-### Custom Validation Rules
-
-Create a PHP 8 attribute with a `validate()` method and a `$message` property:
-
-```php
-#[Attribute(Attribute::TARGET_PROPERTY)]
-class Unique
-{
-    public function __construct(
-        public readonly string $table,
-        public readonly string $column,
-        public readonly string $message = 'This value already exists',
-    ) {}
-
-    public function validate(mixed $value): bool
-    {
-        // Custom validation logic
-        return true;
-    }
-}
-```
-
-### Custom Login Page
-
-Implement `AuthLoginRendererInterface` and bind it in your service provider:
-
-```php
-$container->singleton(AuthLoginRendererInterface::class, function (Container $c) {
-    return new MyCustomLoginRenderer($c->get(ViewEngine::class));
+        $router->group('/admin', function (Router $router): void {
+            $router->apiResource('/users', UserAdminController::class);
+        }, middleware: [AuthorizationMiddleware::class], attributes: ['entitlements' => ['admin']]);
+    }, middleware: [ApiAuthenticationMiddleware::class]);
 });
 ```
 
-### Custom Auth Provider
-
-Implement `AuthProviderInterface`:
+### In a controller
 
 ```php
-class SamlAuthProvider implements AuthProviderInterface
-{
-    public function getName(): string { return 'saml'; }
-    public function getLabel(): string { return 'Sign in with SAML'; }
-    public function getType(): AuthProviderType { return AuthProviderType::Oidc; }
-    public function handleLogin(Request $request, SessionManager $session): Response { /* ... */ }
-    public function handleCallback(Request $request, SessionManager $session): AuthResult { /* ... */ }
+$user = $this->getUserContext();          // null if no auth middleware ran
+
+if ($user === null || !$user->isAuthenticated()) {
+    return $this->unauthorized();
 }
+
+$user->getUser()->id;                     // also ->username, ->email, ->entitlements
+$user->hasEntitlement('catalog.admin');
+$user->hasAnyEntitlement('admin', 'editor');
+$user->getClaim('tenant_id');
 ```
 
-Register it in the `AuthProviderRegistry`.
+Prefer `AuthorizationMiddleware` + route `entitlements` for coarse rules and a
+check in the service for row-level rules (ownership).
 
-### Plugin / Module System
+### Browser session facts
 
-There is no formal plugin system. Extend the framework by:
-- Creating `ServiceProvider` subclasses for modular registration
-- Using the DI container for interface binding
-- Using middleware for cross-cutting concerns
-- Using the event dispatcher for decoupled communication
+- **Logout is `POST /auth/logout` with a `csrf_token` field** (405 on other
+  methods, 403 on a bad token). It clears the auth cookie, destroys the
+  session, clears the refresh cookie and redirects to `/`.
+
+  ```php
+  <form method="post" action="/auth/logout">
+      <?= $csrfField ?? '' ?>
+      <button type="submit">Sign out</button>
+  </form>
+  ```
+
+- After login the user returns to the page they asked for (local paths only),
+  else `postLoginRedirect`.
+- Cookies are `Secure` by default. Over plain HTTP the browser drops them and
+  login appears to do nothing — set `auth.cookieSecure` and
+  `session.cookieSecure` to `false` in `config.dev.json` only.
+- Authentication failures show a generic `Authentication failed.` unless
+  `app.debug` is on; the reason is logged.
+
+### CSRF
+
+`CsrfMiddleware` rejects any non-GET/HEAD/OPTIONS request that lacks the
+session token (`csrf_token` field or `X-CSRF-Token` header) with 403. Paths
+under `csrf.exceptPaths` (default `/api`) and requests with a bearer token are
+exempt. The token is per-session, so several tabs and forms work.
+
+### Refresh tokens
+
+Opt-in rotation with reuse detection: implement and bind
+`RefreshTokenRepositoryInterface`, issue with
+`RefreshTokenService::create($userId)` +
+`RefreshTokenCookieHelper::attach($response, $token, $config)`, and on your
+refresh route (with `RefreshTokenMiddleware`) call
+`validateAndRotate($rawToken)`. Config lives under `auth.refreshToken`
+(`cookieName` default `melodic_refresh`, `cookiePath` default `/auth/refresh`,
+`tokenLifetime` default 7 days). Full guide:
+[docs/refresh-tokens.md](https://github.com/MelodicDevelopment/melodic-php/blob/main/docs/refresh-tokens.md).
+
+Provider setup walkthroughs (Entra, Google, Okta, GitHub, Facebook, local):
+[docs/authentication.md](https://github.com/MelodicDevelopment/melodic-php/blob/main/docs/authentication.md).
 
 ---
 
-## Appendix: Framework Version
-
-The framework version is defined as a constant in `src/Framework.php`:
+## 12. Middleware
 
 ```php
-class Framework
+namespace MyApp\Middleware;
+
+use Melodic\Http\Middleware\MiddlewareInterface;
+use Melodic\Http\Middleware\RequestHandlerInterface;
+use Melodic\Http\Request;
+use Melodic\Http\Response;
+
+class RequestIdMiddleware implements MiddlewareInterface
 {
-    public const VERSION = '1.7.3';
+    public function process(Request $request, RequestHandlerInterface $handler): Response
+    {
+        $id = $request->header('X-Request-Id') ?? bin2hex(random_bytes(8));
+
+        $response = $handler->handle($request->withAttribute('requestId', $id));   // downstream
+
+        return $response->withHeader('X-Request-Id', $id);                         // on the way out
+    }
 }
 ```
 
-The `Console` class reads `Framework::VERSION` automatically for CLI output.
+- Work before `$handler->handle()` sees the request; work after sees the
+  response; returning without calling it short-circuits.
+- `Request` and `Response` are immutable — pass on / return the new instances.
+- **Global** (`$app->addMiddleware(new X(...))`): an instance you construct,
+  runs for every request including 404s. **Route/group**
+  (`middleware: [X::class]`): a class name the container builds, runs only
+  for matched routes, after the global stack.
+- Throw an `HttpException` to fail a request; the outer error handler renders
+  it.
+- When a request fails with an exception, code after `$handler->handle()` never
+  runs. If a **global** middleware only adds response headers and they must be
+  on error responses too, also implement
+  `Melodic\Http\Middleware\ResponseDecoratorInterface` —
+  `decorate(Request $request, Response $response): Response` — and call it from
+  `process()`:
 
-## Appendix: Dependencies
+  ```php
+  public function process(Request $request, RequestHandlerInterface $handler): Response
+  {
+      return $this->decorate($request, $handler->handle($request));
+  }
+  ```
 
-- `php` >= 8.2
-- `firebase/php-jwt` ^6.0 || ^7.0 — JWT encoding/decoding/validation
-- `phpstan/phpstan` ^2.0 (dev) — static analysis
-- `phpunit/phpunit` ^11.0 (dev) — testing
+Built in:
 
-## Appendix: Utilities
+| Class | Constructor | Notes |
+|---|---|---|
+| `Http\Middleware\JsonBodyParserMiddleware` | — | Decodes `application/json` bodies into `$request->body()`; malformed JSON → 400. **Required for JSON APIs** |
+| `Http\Middleware\CorsMiddleware` | `array $config` | Keys `allowedOrigins` (`*`, exact, or `https://*.example.com`), `allowedMethods`, `allowedHeaders`, `maxAge`, `allowCredentials`. Answers `OPTIONS` preflights itself |
+| `Http\Middleware\SecurityHeadersMiddleware` | `array $config = []` | `nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy` by default; opt-in `hsts`, `contentSecurityPolicy`, `permissionsPolicy`. Never overwrites a header you set |
+| `Http\Middleware\RateLimitMiddleware` | `CacheInterface $cache, int $maxAttempts = 60, int $windowSeconds = 60, array $paths = [], array $methods = [], ?callable $keyResolver = null` | Fixed window per client IP; 429 with `Retry-After`. Behind a proxy pass a `$keyResolver` |
+| `Security\CsrfMiddleware` and the auth middleware | via the container | [Section 11](#11-authentication-and-authorization) |
+
+Recommended global order: `SecurityHeadersMiddleware`, `CorsMiddleware`,
+`RateLimitMiddleware`, `JsonBodyParserMiddleware`, `CsrfMiddleware`,
+`AuthCallbackMiddleware`. Throttle login like this:
 
 ```php
-Melodic\Utilities::kill(mixed $var): never
+$app->addMiddleware(new RateLimitMiddleware(
+    $c->get(CacheInterface::class), 10, 60, paths: ['/auth/callback'], methods: ['POST'],
+));
 ```
 
-Dumps a variable with `print_r()` wrapped in `<pre>` tags and calls `exit(1)`. Debug-only utility.
+---
+
+## 13. Errors, logging, cache, sessions, events
+
+### Errors
+
+Throw; do not build error responses by hand in services.
+
+| Throw | Status |
+|---|---|
+| `Melodic\Http\Exception\NotFoundException($msg)` | 404 |
+| `Melodic\Http\Exception\BadRequestException($msg)` | 400 |
+| `Melodic\Validation\ValidationException($result)` | 400 with `{field: [messages]}` |
+| `new HttpException($status, $msg)`, `HttpException::forbidden($msg)` | any |
+| `Melodic\Security\SecurityException` | 401 (message masked outside debug) |
+| anything else | 500 (message masked outside debug) |
+
+The `ExceptionHandler` answers JSON (`{"error": "..."}`) when the request's
+`Accept` or `Content-Type` is `application/json` or the path is `/api` /
+`/api/...`; otherwise an HTML error page. With `app.debug` on, the exception
+class, file, line and trace are included. Server errors are logged with a
+stack trace; client errors as one line.
+
+Map your own exception types once, in a provider's `boot()`:
+
+```php
+$container->get(ExceptionHandler::class)->registerMapper(
+    DomainRuleViolation::class,
+    fn(\Throwable $e, Request $request) => new JsonResponse(['error' => $e->getMessage()], 422),
+);
+```
+
+Mappers run first and the first registered one whose class matches (subclasses
+included) wins, so map narrow domain types — a mapper for `\RuntimeException`
+would also swallow every `HttpException`. The log entry uses the status of the
+response the mapper returns.
+
+An exception unwinds past your middleware, so a middleware's "after" code does
+not run for error responses. Header-only middleware opt back in by also
+implementing `ResponseDecoratorInterface` ([section 12](#12-middleware));
+`CorsMiddleware` and `SecurityHeadersMiddleware` do, so error responses carry
+CORS and security headers.
+
+### Logging
+
+`$app->register(new LoggingServiceProvider())`, then inject
+`Melodic\Log\LoggerInterface`. Daily files `melodic-YYYY-MM-DD.log`.
+
+```php
+$this->logger->info('Order {id} shipped to {country}', ['id' => $order->Id, 'country' => $country]);
+$this->logger->error('Payment failed', ['exception' => $e]);   // 'exception' adds the trace
+```
+
+Levels: `emergency`, `alert`, `critical`, `error`, `warning`, `notice`,
+`info`, `debug`. Never log secrets, tokens or full request bodies. To use
+Monolog or another PSR-3 logger:
+`$container->singleton(LoggerInterface::class, fn() => new PsrLoggerAdapter($monolog));`.
+Without a logger bound, the framework logs nothing.
+
+### Cache
+
+`$app->register(new CacheServiceProvider($dir))`, then inject
+`Melodic\Cache\CacheInterface`: `get($key, $default = null)`,
+`set($key, $value, ?int $ttl = null)`, `has()`, `delete()`, `clear()`. TTL is
+seconds; `null` never expires. `FileCache` is the default, `ArrayCache` is for
+tests, `Psr16CacheAdapter` wraps Redis/Memcached/etc. Cache in the service
+layer, and invalidate in the same service that writes.
+
+### Sessions
+
+`$app->register(new SessionServiceProvider())`, then inject
+`Melodic\Session\SessionInterface`: `get`, `set`, `has`, `remove`,
+`regenerate()`, `destroy()`. Starts lazily on first use. Call `regenerate()`
+after any privilege change. Never use `$_SESSION` directly. `ArraySession` is
+the in-memory test double.
+
+### Events
+
+`$app->register(new EventServiceProvider())`, then inject
+`Melodic\Event\EventDispatcherInterface`.
+
+```php
+final class ProductCreated extends \Melodic\Event\Event
+{
+    public function __construct(public readonly ProductModel $product) {}
+}
+
+// In a provider's boot():
+$container->get(EventDispatcherInterface::class)->listen(
+    ProductCreated::class,
+    fn(ProductCreated $event) => $container->get(SearchIndexer::class)->index($event->product),
+    priority: 10,                       // higher runs first
+);
+
+// In the service, after the write succeeds:
+$this->events->dispatch(new ProductCreated($product));
+```
+
+Listeners are matched on the event's **exact class** (no parent or interface
+matching) and run synchronously. Use events for side effects, not for core
+control flow.
+
+---
+
+## 14. Console and migrations
+
+`vendor/bin/melodic` (framework CLI): `make:project`, `make:entity`,
+`make:config`, `claude:install`.
+
+`bin/console` (your application's CLI) starts empty — register what you need:
+
+```php
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+
+use Melodic\Cache\CacheInterface;
+use Melodic\Console\{CacheClearCommand, Console, MakeMigrationCommand, MigrateCommand};
+use Melodic\Console\{MigrateRollbackCommand, MigrateStatusCommand, RouteListCommand};
+use Melodic\Data\DbContextInterface;
+use Melodic\Data\Migration\Migrator;
+
+$app = require __DIR__ . '/../bootstrap/app.php';      // returns the Application
+$c = $app->getContainer();
+
+$migrations = $app->getBasePath() . '/migrations';
+$migrator = new Migrator($c->get(DbContextInterface::class), $migrations);
+
+$console = new Console();
+$console->setName('MyApp');
+$console->register(new RouteListCommand($app->getRouter()));           // route:list
+$console->register(new CacheClearCommand($c->get(CacheInterface::class)));  // cache:clear
+$console->register(new MigrateCommand($migrator));                     // migrate
+$console->register(new MigrateRollbackCommand($migrator));             // migrate:rollback [--steps=N]
+$console->register(new MigrateStatusCommand($migrator));               // migrate:status
+$console->register(new MakeMigrationCommand($migrations));             // make:migration <name>
+
+exit($console->run($argv));
+```
+
+**Migrations** are plain SQL files applied in file-name order and recorded in
+`melodic_migrations`:
+
+```sql
+-- migrations/20261116093000_create_products.sql
+CREATE TABLE products (
+    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+    Name VARCHAR(100) NOT NULL,
+    Price DECIMAL(10,2) NOT NULL,
+    IsActive INTEGER NOT NULL DEFAULT 1,
+    CreatedAt DATETIME NOT NULL
+);
+
+-- @down
+DROP TABLE products;
+```
+
+Statements are split on a `;` at the end of a line. Most databases auto-commit
+DDL, so keep each migration small. A migration without a `-- @down` section
+cannot be rolled back. Never edit an applied migration — add a new one.
+
+**Your own command:**
+
+```php
+use Melodic\Console\Command;
+
+class PruneSessionsCommand extends Command
+{
+    public function __construct(private readonly SessionService $sessions)
+    {
+        parent::__construct('sessions:prune', 'Delete expired sessions');
+    }
+
+    public function execute(array $args): int
+    {
+        $this->writeln("Pruned {$this->sessions->prune()} session(s).");
+
+        return 0;                       // non-zero = failure; $this->error() writes to STDERR
+    }
+}
+```
+
+---
+
+## 15. Testing
+
+`Application::handle()` runs a request through the full stack — middleware,
+routing, binding, validation, error handling — and returns the `Response`
+without sending anything. Build requests explicitly (a `null` constructor
+argument falls back to the PHP superglobal):
+
+```php
+use Melodic\Http\Request;
+use PHPUnit\Framework\TestCase;
+
+final class ProductApiTest extends TestCase
+{
+    private \Melodic\Core\Application $app;
+
+    protected function setUp(): void
+    {
+        $this->app = require __DIR__ . '/../bootstrap/app.php';
+        // Swap infrastructure for test doubles:
+        $this->app->getContainer()->singleton(
+            \Melodic\Data\DbContextInterface::class,
+            fn() => new \Melodic\Data\DbContext('sqlite::memory:'),
+        );
+    }
+
+    private function request(string $method, string $uri, array $body = [], array $headers = []): Request
+    {
+        return new Request(
+            server: ['REQUEST_METHOD' => $method, 'REQUEST_URI' => $uri],
+            query: [],                                  // parse the query string yourself if the test needs it
+            body: $body,
+            headers: $headers + ['Accept' => 'application/json'],
+            cookies: [],
+            files: [],
+        );
+    }
+
+    public function testRejectsInvalidProduct(): void
+    {
+        $response = $this->app->handle($this->request('POST', '/api/products', ['Price' => -1]));
+
+        self::assertSame(400, $response->getStatusCode());
+        self::assertArrayHasKey('Name', json_decode($response->getBody(), true));
+    }
+}
+```
+
+- `Request` takes `query` separately from `REQUEST_URI` — pass
+  `query: ['page' => '2']` for query-string tests.
+- Unit-test services with a `DbContext('sqlite::memory:')` and your
+  migrations, or a stub `DbContextInterface`. Query/command classes are
+  trivially testable the same way.
+- Test doubles shipped with the framework: `ArrayCache`, `ArraySession`,
+  `NullLogger`.
+- Authenticated requests: bind a stub middleware, or set
+  `auth.api.enabled: false` in the test config to get an anonymous
+  `userContext`, or mint a token with your `auth.local` key.
+
+---
+
+## 16. Worked example: a complete resource
+
+Adding "products" to an app, in the order you should write it.
+
+1. **Migration** — `php bin/console make:migration create_products`, write the
+   SQL ([section 14](#14-console-and-migrations)), `php bin/console migrate`.
+2. **Entity model** — `src/DTO/ProductModel.php`, properties named like the
+   columns:
+
+   ```php
+   class ProductModel extends Model
+   {
+       public int $Id;
+       public string $Name;
+       public float $Price;
+       public bool $IsActive;
+       public \DateTimeImmutable $CreatedAt;
+   }
+   ```
+
+3. **Request DTOs** — `CreateProductRequest`, `UpdateProductRequest`,
+   `PageRequest` ([section 8](#8-models-binding-and-validation)).
+4. **Queries and commands** — one class per statement under
+   `src/Data/Product/` ([section 9](#9-data-access-queries-commands-services)):
+   `GetProductByIdQuery`, `GetProductsPageQuery`, `CreateProductCommand`,
+   `UpdateProductCommand`, `DeleteProductCommand`.
+5. **Service** — `ProductService extends Service`; transactions live here.
+6. **Controller** — `ProductController extends ApiController`
+   ([section 7](#7-controllers)).
+7. **Route** — `$router->apiResource('/products', ProductController::class);`
+   inside the `/api` group.
+8. **Test** — at least one happy path and one validation failure through
+   `$app->handle()`.
+
+Resulting behaviour, with no further code:
+
+| Request | Response |
+|---|---|
+| `GET /api/products?page=2&perPage=10` | 200 `{"items":[…],"total":57,"page":2,"perPage":10,"pageCount":6}` |
+| `GET /api/products/5` | 200 `{"id":5,"name":"…","price":9.5,"isActive":true,"createdAt":"2026-11-16T09:30:00+00:00"}` or 404 |
+| `GET /api/products/abc` | 400 `{"id":["Route parameter 'id' must be an integer."]}` |
+| `POST /api/products` `{"name":"Widget","price":"9.50"}` | 201 + `Location: /api/products/6` |
+| `POST /api/products` `{"price":-1}` | 400 `{"Name":["This field is required"],"Price":["Must be at least 0"]}` |
+| `PATCH /api/products/5` `{"price":12}` | 200 — only `Price` is updated |
+| `DELETE /api/products/5` | 204, or 404 if it did not exist |
+| `PUT /api/products` | 405 with `Allow: GET, POST, HEAD` |
+| no/invalid bearer token (group uses `ApiAuthenticationMiddleware`) | 401 `{"error":"Authentication required."}` |
+
+---
+
+## 17. Common mistakes
+
+| Mistake | What happens | Do this |
+|---|---|---|
+| `new AuthenticationMiddleware(...)` or `new JwtValidator($secret)` | Class/signature does not exist | Register `SecurityServiceProvider`; use `ApiAuthenticationMiddleware::class` / `WebAuthenticationMiddleware::class` from the container |
+| Auth middleware added globally | Public pages 401 / login page redirect loop | Put it on route groups |
+| `config.local.json` | Never loaded | `config/config.dev.json` |
+| Expecting an environment list override to merge | Entries vanish | Lists replace — restate the full list |
+| No `JsonBodyParserMiddleware` | `$request->body()` and model binding see nothing for JSON requests | Add it globally |
+| Reading validation errors by JSON key (`name`) | Keys are property names (`Name`) | Read by property name |
+| `#[MaxLength(50)]` to make a field mandatory | `null` passes | Add `#[Required]` |
+| Non-nullable request property without `#[Required]` or a default | "must not be accessed before initialization" error when omitted | Make it nullable, give it a default, or mark it `#[Required]` |
+| Action parameter name ≠ route parameter name (`{id}` vs `$productId`) | 500 "Cannot resolve argument" | Use the same name |
+| `show(string $id)` then `(int) $id` | Garbage ids reach the service | `show(int $id)` — coerced, 400 on bad input |
+| `$response->withHeader(...)` without using the result | Header silently missing | `$response = $response->withHeader(...)` |
+| `<?= $product->Name ?>` in a template | XSS | `<?= $this->e($product->Name) ?>` |
+| Logout as a link (`GET /auth/logout`) | 405 | POST form with `$csrfField` |
+| Login "does nothing" on `http://localhost` | Secure cookies dropped | `cookieSecure: false` for `auth` and `session` in `config.dev.json` |
+| POST form returns 403 after adding `CsrfMiddleware` | Missing token | `<?= $csrfField ?>` in the form, or `X-CSRF-Token` header |
+| `AuthorizationMiddleware` with constructor entitlements on a route | Route middleware is container-built — the arguments never arrive | `attributes: ['entitlements' => [...]]` on the route/group |
+| `$container->has(Foo::class)` to detect a binding | True for any class | `isBound()` |
+| Model property `$createdAt` for column `CreatedAt` | Never hydrated (exact match) | Name the property like the column |
+| Extra or missing keys in the params array | PDO "invalid parameter number" | One value per placeholder — build params explicitly |
+| `LIMIT`/`OFFSET` in SQL passed to `Paginator` | SQL error | Leave them out; include `ORDER BY` |
+| SQL built with string interpolation of input | SQL injection | `:named` placeholders |
+| `$request->ip()` behind a load balancer | Proxy's address | Read your proxy's header in a `keyResolver` / middleware you control |
+| `new RedirectResponse($request->query('next'))` | Open redirect | `RedirectResponse::local(...)` |
+| `Utilities::kill()`, `SafeRedirect`, `OAuthClient` instance methods | Deprecated, removed in 5.0 | `RedirectResponse::isLocalPath()`; a debugger |
+| Listener registered for a base event class | Never called | Listen on the concrete class |
+| `"port": "${DB_PORT}"` used as an `int` | Placeholders yield strings (only whole-value `true`/`false` become booleans) | Cast where you read it |
+| Header-adding middleware missing from error responses | Exceptions skip a middleware's "after" code | Implement `ResponseDecoratorInterface` |
+| `{id:\d+}` and expecting a 400 for `/products/abc` | Constraint mismatch is a 404 | Fine for pages; drop the constraint if you want the 400 |
+| `array` property expected to contain hydrated models | Raw arrays | `#[ListOf(X::class)]` on the property |
+| Calling `$container->get()` inside a controller or service | Hidden dependencies | Constructor injection |
+
+---
+
+## 18. Quick API index
+
+| Namespace | Classes you use |
+|---|---|
+| `Melodic\Core` | `Application`, `Configuration` |
+| `Melodic\Http` | `Request`, `Response`, `JsonResponse`, `RedirectResponse`, `HttpMethod` |
+| `Melodic\Http\Exception` | `HttpException`, `NotFoundException`, `BadRequestException`, `MethodNotAllowedException` |
+| `Melodic\Http\Middleware` | `MiddlewareInterface`, `RequestHandlerInterface`, `ResponseDecoratorInterface`, `CorsMiddleware`, `JsonBodyParserMiddleware`, `SecurityHeadersMiddleware`, `RateLimitMiddleware` |
+| `Melodic\Routing` | `Router`, `Route`, `FromQuery` |
+| `Melodic\Controller` | `ApiController`, `MvcController` |
+| `Melodic\DI` | `Container`, `ContainerInterface`, `ServiceProvider`, `ContainerException`, `NotFoundException` |
+| `Melodic\Data` | `Model`, `Guarded`, `ListOf`, `DbContext`, `DbContextInterface`, `QueryInterface`, `CommandInterface`, `Paginator`, `PaginatedResult`, `ModelBindingException` |
+| `Melodic\Data\Migration` | `Migrator` |
+| `Melodic\Service` | `Service` |
+| `Melodic\Validation` | `Validator`, `ValidationResult`, `ValidationException`, `RuleInterface` |
+| `Melodic\Validation\Rules` | `Required`, `Email`, `Url`, `Uuid`, `Date`, `MinLength`, `MaxLength`, `Min`, `Max`, `Pattern`, `In` |
+| `Melodic\View` | `ViewEngine`, `ViewBag` |
+| `Melodic\Security` | `SecurityServiceProvider`, `ApiAuthenticationMiddleware`, `WebAuthenticationMiddleware`, `OptionalWebAuthMiddleware`, `AuthCallbackMiddleware`, `AuthorizationMiddleware`, `CsrfMiddleware`, `UserContextInterface`, `User`, `LocalAuthenticatorInterface`, `SecurityException`, `RefreshTokenService`, `RefreshTokenRepositoryInterface`, `RefreshTokenCookieHelper`, `RefreshTokenMiddleware` |
+| `Melodic\Cache` | `CacheInterface`, `CacheServiceProvider`, `FileCache`, `ArrayCache`, `Psr16CacheAdapter` |
+| `Melodic\Session` | `SessionInterface`, `SessionServiceProvider`, `NativeSession`, `ArraySession` |
+| `Melodic\Log` | `LoggerInterface`, `LoggingServiceProvider`, `FileLogger`, `NullLogger`, `LogLevel`, `PsrLoggerAdapter` |
+| `Melodic\Event` | `EventDispatcherInterface`, `EventServiceProvider`, `Event` |
+| `Melodic\Error` | `ExceptionHandler` |
+| `Melodic\Console` | `Console`, `Command`, `RouteListCommand`, `CacheClearCommand`, `MigrateCommand`, `MigrateRollbackCommand`, `MigrateStatusCommand`, `MakeMigrationCommand` |
+
+**Dependencies:** `firebase/php-jwt`, `psr/container`; PHP 8.2+ with PDO.
+Optional: `ext-mbstring` (character- rather than byte-accurate
+`#[MinLength]` / `#[MaxLength]`), `psr/log` (for `PsrLoggerAdapter`),
+`psr/simple-cache` (for `Psr16CacheAdapter`).
+
+**Upgrading:** `CHANGELOG.md`, `MIGRATION-3.0.md` and `MIGRATION-4.0.md` sit
+next to this file in the package. 4.1 is backwards compatible with 4.0.
+
+**Topic guides** (in the repository; not shipped in the Composer package):
+<https://github.com/MelodicDevelopment/melodic-php/tree/main/docs>

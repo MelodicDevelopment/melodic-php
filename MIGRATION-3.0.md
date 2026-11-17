@@ -111,7 +111,7 @@ After upgrading, review your `config.json` per environment:
   "auth": {
     "local": { "signingKey": "<strong-secret>" },
     "cookieSecure": true,
-    "oidcCacheDir": "storage/cache/oidc"
+    "oidcCacheDir": "/var/www/my-app/storage/cache/oidc"
   },
   "session": {
     "cookieSecure": true,
@@ -121,3 +121,5 @@ After upgrading, review your `config.json` per environment:
 ```
 
 Set the `cookieSecure` flags to `false` only in local HTTP development configs.
+`auth.oidcCacheDir` is used as given — a relative path resolves against PHP's
+working directory, so use an absolute path.

@@ -60,7 +60,12 @@ GitHub uses OAuth2 (not OIDC), so the framework needs a signing key to issue its
 Replace the placeholder values:
 - `PASTE_YOUR_CLIENT_ID_HERE` — your GitHub Client ID
 - `PASTE_YOUR_CLIENT_SECRET_HERE` — your GitHub Client Secret
-- `replace-with-a-random-secret...` — any random string of 32+ characters (this signs the JWT your app creates)
+- `replace-with-a-random-secret...` — any random string of 32+ characters (this signs the JWT your app creates). A shorter key is rejected at startup; generate one with `openssl rand -base64 48`
+
+> **Plain-HTTP local development:** the auth and session cookies are `Secure` by default, and browsers only reliably accept `Secure` cookies over HTTPS (some exempt `localhost`), so over `http://localhost` the login may not stick (typical symptom: `Invalid OAuth state parameter.` on the callback). Put this in `config/config.dev.json` — the gitignored local override file loaded by `$app->loadEnvironmentConfig()` — and never in production config:
+> ```json
+> { "auth": { "cookieSecure": false }, "session": { "cookieSecure": false } }
+> ```
 
 ### Why is `local.signingKey` needed?
 
@@ -76,6 +81,8 @@ GitHub returns user data with field names like `login` and `id`. The `claimMap` 
 | `login` | `username` | Display name |
 | `email` | `email` | Email address |
 
+GitHub's numeric `id` is stored as a string. Only `sub`, `username`, `email` (and `entitlements`, if mapped) are carried into the JWT.
+
 ## Step 4: Set Up Routes
 
 In your `config/routes.php`, add the auth routes:
@@ -87,15 +94,17 @@ $router->group('/auth', function (Router $router) {
     $router->get('/login', HomeController::class, 'index');
     $router->get('/login/{provider}', HomeController::class, 'index');
     $router->get('/callback/{provider}', HomeController::class, 'index');
-    $router->get('/logout', HomeController::class, 'index');
+    $router->post('/logout', HomeController::class, 'index');
 }, middleware: [AuthCallbackMiddleware::class]);
 ```
+
+`AuthCallbackMiddleware` is provided by `SecurityServiceProvider`, so make sure your entry point calls `$app->register(new SecurityServiceProvider());`. Logout is a CSRF-protected `POST /auth/logout`, not a link — see [Logout](authentication.md#logout).
 
 ## Step 5: Test It
 
 1. Start your app:
    ```bash
-   php -S localhost:8080 -t example/public
+   php -S localhost:8080 -t public
    ```
 2. Visit `http://localhost:8080/auth/login`
 3. Click **Sign in with GitHub**
@@ -105,5 +114,7 @@ $router->group('/auth', function (Router $router) {
 ## Troubleshooting
 
 - **"redirect_uri_mismatch" error**: The callback URL in your config must exactly match what you entered on GitHub, including protocol and port.
-- **Email is null**: Some GitHub users have their email set to private. Request the `user:email` scope (already included above) and the email should come through. If the user has no public email, `email` may still be empty.
+- **"Invalid OAuth state parameter"**: The session cookie did not survive the round trip to GitHub — over plain HTTP, set `session.cookieSecure` to `false` (see the note in Step 3).
+- **Email is empty**: The framework reads the email from `userInfoUrl` (`/user`), which only returns the user's *public* email. For users who keep their email private, the `email` claim is an empty string, whatever scopes are granted.
+- **A 401 "Authentication failed." on every auth route**: Usually the `local` signing config is missing. Set `app.debug` to `true` locally to see the real message.
 - **For production**: Update the Homepage URL and callback URL on GitHub to your production domain, and update `redirectUri` in your config to match.

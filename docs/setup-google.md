@@ -69,6 +69,13 @@ Open your `config/config.json` and add the Google provider:
 
 Replace `PASTE_YOUR_CLIENT_ID_HERE` and `PASTE_YOUR_CLIENT_SECRET_HERE` with the values from Step 4.
 
+No `audience` is needed: it defaults to the client ID, which is what Google puts in the ID token's `aud`. Keep `openid` in `scopes` — the callback requires an `id_token` and does not fall back to the access token.
+
+> **Plain-HTTP local development:** the auth and session cookies are `Secure` by default, and browsers only reliably accept `Secure` cookies over HTTPS (some exempt `localhost`), so over `http://localhost` the login may not stick (typical symptom: `Invalid OAuth state parameter.` on the callback). Put this in `config/config.dev.json` — the gitignored local override file loaded by `$app->loadEnvironmentConfig()` — and never in production config:
+> ```json
+> { "auth": { "cookieSecure": false }, "session": { "cookieSecure": false } }
+> ```
+
 ## Step 6: Set Up Routes
 
 In your `config/routes.php`, add the auth routes:
@@ -80,15 +87,17 @@ $router->group('/auth', function (Router $router) {
     $router->get('/login', HomeController::class, 'index');
     $router->get('/login/{provider}', HomeController::class, 'index');
     $router->get('/callback/{provider}', HomeController::class, 'index');
-    $router->get('/logout', HomeController::class, 'index');
+    $router->post('/logout', HomeController::class, 'index');
 }, middleware: [AuthCallbackMiddleware::class]);
 ```
+
+`AuthCallbackMiddleware` is provided by `SecurityServiceProvider`, so make sure your entry point calls `$app->register(new SecurityServiceProvider());`. Logout is a CSRF-protected `POST /auth/logout`, not a link — see [Logout](authentication.md#logout).
 
 ## Step 7: Test It
 
 1. Start your app:
    ```bash
-   php -S localhost:8080 -t example/public
+   php -S localhost:8080 -t public
    ```
 2. Visit `http://localhost:8080/auth/login`
 3. Click **Sign in with Google**
@@ -99,4 +108,6 @@ $router->group('/auth', function (Router $router) {
 
 - **"redirect_uri_mismatch" error**: The redirect URI in your config must exactly match what you entered in the Google Cloud Console, including the protocol (`http` vs `https`) and port.
 - **"access_denied" error**: Your app is in testing mode. Go to the OAuth consent screen and add your Google account as a test user.
+- **"Invalid OAuth state parameter"**: The session cookie did not survive the round trip to Google — over plain HTTP, set `session.cookieSecure` to `false` (see the note in Step 5).
+- **"Invalid token audience"**: Remove `audience` from the provider config (or set it to the client ID).
 - **For production**: Change `redirectUri` to your production URL (must be `https`) and update the Google Cloud Console to match.

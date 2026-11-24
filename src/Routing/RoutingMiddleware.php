@@ -141,7 +141,10 @@ class RoutingMiddleware implements MiddlewareInterface
                         try
                         {
                             /** @var Model $model */
-                            $model = $className::fromArray($request->body());
+                            $source = $param->getAttributes(FromQuery::class) !== []
+                                ? $request->query()
+                                : $request->body();
+                            $model = $className::fromArray(is_array($source) ? $source : []);
                         }
                         catch (ModelBindingException $e)
                         {

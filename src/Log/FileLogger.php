@@ -11,6 +11,7 @@ class FileLogger implements LoggerInterface
     public function __construct(
         private readonly string $logDirectory,
         LogLevel $minLevel = LogLevel::DEBUG,
+        private readonly int $maxFiles = 0,
     ) {
         $this->minSeverity = $minLevel->severity();
     }
@@ -126,6 +127,31 @@ class FileLogger implements LoggerInterface
         return str_replace(["\r\n", "\r", "\n"], ' ', $value);
     }
 
+    /**
+     * Retention: with $maxFiles > 0, keep only the newest N daily log files.
+     * Runs once a day (when a new file is created), so it costs nothing on
+     * the normal write path. 0 keeps everything.
+     */
+    private function pruneOldFiles(): void
+    {
+        if ($this->maxFiles <= 0) {
+            return;
+        }
+
+        $files = glob($this->logDirectory . '/melodic-????-??-??.log');
+
+        if ($files === false || count($files) <= $this->maxFiles) {
+            return;
+        }
+
+        // Date-stamped names sort chronologically.
+        sort($files);
+
+        foreach (array_slice($files, 0, count($files) - $this->maxFiles) as $old) {
+            @unlink($old);
+        }
+    }
+
     private function write(string $entry): void
     {
         try {
@@ -152,6 +178,7 @@ class FileLogger implements LoggerInterface
 
             if ($isNewFile) {
                 @chmod($path, 0640);
+                $this->pruneOldFiles();
             }
         } catch (\Throwable) {
             // Logger must never crash the app

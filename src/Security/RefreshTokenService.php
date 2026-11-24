@@ -52,7 +52,7 @@ class RefreshTokenService
 
         if ($refreshToken->isRevoked()) {
             $this->repository->revokeByFamily($refreshToken->familyId);
-            throw new SecurityException('Refresh token reuse detected.');
+            throw new RefreshTokenReuseException($refreshToken->familyId);
         }
 
         if ($refreshToken->isExpired()) {
@@ -63,7 +63,7 @@ class RefreshTokenService
 
         if ($refreshToken->generation < $latestGeneration) {
             $this->repository->revokeByFamily($refreshToken->familyId);
-            throw new SecurityException('Refresh token reuse detected.');
+            throw new RefreshTokenReuseException($refreshToken->familyId);
         }
 
         return $refreshToken;
@@ -112,10 +112,20 @@ class RefreshTokenService
             return $this->rotate($this->validate($rawToken));
         }
 
-        /** @var array{token: string, model: RefreshToken} */
-        return $this->context->transaction(
-            fn(): array => $this->rotate($this->validate($rawToken)),
-        );
+        try {
+            /** @var array{token: string, model: RefreshToken} */
+            return $this->context->transaction(
+                fn(): array => $this->rotate($this->validate($rawToken)),
+            );
+        } catch (RefreshTokenReuseException $e) {
+            // validate() revoked the family and then threw — and the throw
+            // rolled that revocation back with the rest of the transaction.
+            // Re-apply it outside the transaction, or a replayed token would
+            // be rejected while its family stayed usable.
+            $this->repository->revokeByFamily($e->familyId);
+
+            throw $e;
+        }
     }
 
     public function revokeAllForUser(int $userId): void

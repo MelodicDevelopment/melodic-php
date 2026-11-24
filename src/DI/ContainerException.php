@@ -14,6 +14,6 @@ use RuntimeException;
  * which lets auto-wiring distinguish "nothing is bound" from "the binding
  * blew up" — only the former may fall back to a parameter's default value.
  */
-class ContainerException extends RuntimeException
+class ContainerException extends RuntimeException implements \Psr\Container\ContainerExceptionInterface
 {
 }

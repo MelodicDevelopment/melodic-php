@@ -20,6 +20,12 @@ class NativeSession implements SessionInterface
             // Harden the session cookie before the session starts. Secure defaults
             // on; disable via config for plain-HTTP local development.
             if (!headers_sent()) {
+                // Strict mode: never adopt a session id the server did not
+                // issue (an attacker-planted id would otherwise be accepted —
+                // session fixation). Cookies only, never ids in URLs.
+                ini_set('session.use_strict_mode', '1');
+                ini_set('session.use_only_cookies', '1');
+
                 session_set_cookie_params([
                     'lifetime' => 0,
                     'path' => $this->cookiePath,

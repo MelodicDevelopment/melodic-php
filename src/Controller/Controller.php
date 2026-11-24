@@ -7,6 +7,7 @@ namespace Melodic\Controller;
 use Melodic\Http\JsonResponse;
 use Melodic\Http\Request;
 use Melodic\Http\Response;
+use Melodic\Security\UserContextInterface;
 
 abstract class Controller
 {
@@ -15,6 +16,11 @@ abstract class Controller
     public function setRequest(Request $request): void
     {
         $this->request = $request;
+    }
+
+    protected function getUserContext(): ?UserContextInterface
+    {
+        return $this->request->getAttribute('userContext');
     }
 
     protected function json(mixed $data, int $statusCode = 200): JsonResponse

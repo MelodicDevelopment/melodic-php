@@ -264,7 +264,7 @@ class RouterTest extends TestCase
 
         $routes = $this->router->getRoutes();
 
-        $this->assertCount(5, $routes);
+        $this->assertCount(6, $routes);
 
         // GET /users -> index
         $this->assertSame(HttpMethod::GET, $routes[0]->method);
@@ -300,7 +300,7 @@ class RouterTest extends TestCase
 
         $routes = $this->router->getRoutes();
 
-        $this->assertCount(5, $routes);
+        $this->assertCount(6, $routes);
         $this->assertSame('/api/users', $routes[0]->pattern);
         $this->assertSame('/api/users/{id}', $routes[1]->pattern);
     }
@@ -485,7 +485,7 @@ class RouterTest extends TestCase
 
         $routes = $this->router->getRoutes();
 
-        $this->assertCount(5, $routes);
+        $this->assertCount(6, $routes);
 
         foreach ($routes as $route) {
             $this->assertSame(['permission' => 'users.manage'], $route->attributes);

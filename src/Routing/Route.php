@@ -8,7 +8,13 @@ use Melodic\Http\HttpMethod;
 
 class Route
 {
+    /** One level of nested braces, so quantifiers such as \d{4} are allowed. */
+    public const PARAM_TOKEN = '\{([a-zA-Z_][a-zA-Z0-9_]*)(?::((?:[^{}]|\{[^{}]*\})+))?\}';
+
     private ?string $compiledRegex = null;
+
+    /** @var array<string, string> Per-parameter constraint regex, filled by compiledRegex(). */
+    private array $constraints = [];
 
     /**
      * @param string[] $middleware
@@ -21,6 +27,7 @@ class Route
         public readonly string $action,
         public readonly array $middleware = [],
         public readonly array $attributes = [],
+        public readonly ?string $name = null,
     ) {}
 
     /** @return array<string, string>|null */
@@ -45,11 +52,41 @@ class Route
      */
     public function matchesPath(string $path): ?array
     {
-        if (!preg_match($this->compiledRegex(), $path, $matches)) {
-            return null;
+        $regex = $this->compiledRegex();
+
+        if (!preg_match($regex, $path, $matches)) {
+            // "/users/" is the same resource as "/users": retry without the
+            // trailing slash (an exact match above still wins, so a pattern
+            // registered with a trailing slash keeps working).
+            if ($path === '/' || !str_ends_with($path, '/') || !preg_match($regex, rtrim($path, '/'), $matches)) {
+                return null;
+            }
         }
 
-        return array_filter($matches, fn(string $key) => !is_numeric($key), ARRAY_FILTER_USE_KEY);
+        $params = [];
+
+        foreach ($matches as $key => $value) {
+            if (!is_string($key)) {
+                continue;
+            }
+
+            // The path is matched undecoded (so an encoded "/" cannot cross
+            // a segment boundary); decode the captured values.
+            $decoded = rawurldecode($value);
+
+            // The decoded value is what the controller receives, so it must
+            // satisfy the constraint too. Otherwise "%2E%2E%2F" would slip
+            // "../" past {name} (one segment) or {name:[^/.]+}.
+            if ($decoded !== $value
+                && preg_match('#^(?:' . ($this->constraints[$key] ?? '[^/]+') . ')$#', $decoded) !== 1
+            ) {
+                return null;
+            }
+
+            $params[$key] = $decoded;
+        }
+
+        return $params;
     }
 
     /**
@@ -60,12 +97,22 @@ class Route
     private function compiledRegex(): string
     {
         if ($this->compiledRegex === null) {
+            // {name} matches one path segment; {name:regex} constrains it
+            // (e.g. {id:\d+} or {year:\d{4}}).
             $regex = preg_replace_callback(
-                '/\{([a-zA-Z_][a-zA-Z0-9_]*)\}|([^{]+)/',
-                fn(array $m) => isset($m[2])
-                    ? preg_quote($m[2], '#')
-                    : '(?P<' . $m[1] . '>[^/]+)',
+                '/' . self::PARAM_TOKEN . '|([^{]+)/',
+                function (array $m): string {
+                    if ($m[3] !== null) {
+                        return preg_quote($m[3], '#');
+                    }
+
+                    $constraint = $m[2] !== null ? str_replace('#', '\\#', $m[2]) : '[^/]+';
+                    $this->constraints[$m[1]] = $constraint;
+
+                    return '(?P<' . $m[1] . '>' . $constraint . ')';
+                },
                 $this->pattern,
+                flags: PREG_UNMATCHED_AS_NULL,
             );
 
             $this->compiledRegex = '#^' . $regex . '$#';

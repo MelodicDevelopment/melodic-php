@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Melodic\Controller;
 
-use Melodic\Security\UserContextInterface;
-
+/**
+ * Base class for JSON API controllers. The response helpers and
+ * getUserContext() live on Controller; this class marks intent and is the
+ * place for API-only helpers.
+ */
 class ApiController extends Controller
 {
-    protected function getUserContext(): ?UserContextInterface
-    {
-        return $this->request->getAttribute('userContext');
-    }
 }

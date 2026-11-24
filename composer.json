@@ -19,11 +19,19 @@
 	},
 	"require": {
 		"php": ">=8.2",
-		"firebase/php-jwt": "^6.0 || ^7.0"
+		"firebase/php-jwt": "^6.0 || ^7.0",
+		"psr/container": "^1.1 || ^2.0"
 	},
 	"require-dev": {
 		"phpstan/phpstan": "^2.0",
-		"phpunit/phpunit": "^11.0"
+		"phpunit/phpunit": "^11.0",
+		"psr/log": "^3.0",
+		"psr/simple-cache": "^3.0"
+	},
+	"suggest": {
+		"ext-mbstring": "Character-accurate (rather than byte) length checks in #[MinLength] / #[MaxLength]",
+		"psr/log": "Plug any PSR-3 logger (e.g. Monolog) in through Melodic\\Log\\PsrLoggerAdapter",
+		"psr/simple-cache": "Plug any PSR-16 cache (e.g. symfony/cache) in through Melodic\\Cache\\Psr16CacheAdapter"
 	},
 	"autoload": {
 		"psr-4": {
@@ -37,7 +45,7 @@
 	},
 	"scripts": {
 		"test": "phpunit",
-		"analyse": "phpstan analyse"
+		"analyse": "phpstan analyse --memory-limit=512M"
 	},
 	"bin": [
 		"bin/melodic"

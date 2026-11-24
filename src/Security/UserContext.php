@@ -63,13 +63,24 @@ class UserContext implements UserContextInterface
     /** @param array<string, mixed> $claims */
     public static function fromClaims(array $claims): self
     {
+        // Claims come from tokens minted by external identity providers, so
+        // their shapes are not guaranteed: coerce rather than let an odd
+        // claim (a non-string name, a single-string entitlement) blow up as
+        // a TypeError.
+        $string = static fn(mixed $value): string => is_scalar($value) ? (string) $value : '';
+
+        $entitlements = $claims['entitlements'] ?? [];
+        $entitlements = is_array($entitlements) ? $entitlements : [$entitlements];
+
         $user = new User(
-            id: (string) ($claims['sub'] ?? ''),
-            username: $claims['username'] ?? $claims['preferred_username'] ?? $claims['name'] ?? '',
-            email: $claims['email'] ?? '',
-            entitlements: $claims['entitlements'] ?? [],
+            id: $string($claims['sub'] ?? ''),
+            username: $string($claims['username'] ?? $claims['preferred_username'] ?? $claims['name'] ?? ''),
+            email: $string($claims['email'] ?? ''),
+            entitlements: array_values(array_filter(array_map($string, $entitlements), fn(string $e) => $e !== '')),
         );
 
-        return new self($user, $claims['provider'] ?? null, $claims);
+        $provider = $claims['provider'] ?? null;
+
+        return new self($user, is_string($provider) ? $provider : null, $claims);
     }
 }

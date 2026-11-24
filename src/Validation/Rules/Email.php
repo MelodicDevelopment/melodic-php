@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Melodic\Validation\Rules;
 
 use Attribute;
+use Melodic\Validation\RuleInterface;
 
 #[Attribute(Attribute::TARGET_PROPERTY)]
-class Email
+class Email implements RuleInterface
 {
     public function __construct(
         public readonly string $message = 'Must be a valid email address'

@@ -23,7 +23,8 @@ class LoggingServiceProvider extends ServiceProvider
             $path = $config->get('logging.path') ?? $app->getBasePath() . '/logs';
             $level = LogLevel::parse($config->get('logging.level', 'debug'));
 
-            return new FileLogger($path, $level);
+            // logging.maxFiles: keep only the newest N daily files (0 = keep all).
+            return new FileLogger($path, $level, (int) $config->get('logging.maxFiles', 0));
         });
     }
 }

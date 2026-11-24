@@ -55,7 +55,8 @@ class MakeConfigCommandTest extends TestCase
         $this->assertNotNull($data);
         $this->assertArrayHasKey('app', $data);
         $this->assertArrayHasKey('database', $data);
-        $this->assertArrayHasKey('jwt', $data);
+        // No `jwt` block: nothing in the framework reads one (auth lives under `auth.*`).
+        $this->assertArrayNotHasKey('jwt', $data);
     }
 
     public function testMakeConfigRefusesToOverwrite(): void

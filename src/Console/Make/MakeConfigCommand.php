@@ -62,10 +62,6 @@ class MakeConfigCommand extends Command
     },
     "database": {
         "dsn": ""
-    },
-    "jwt": {
-        "secret": "",
-        "algorithm": "HS256"
     }
 }
 JSON;

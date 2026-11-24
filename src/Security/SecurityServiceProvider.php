@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Melodic\Security;
 
 use Melodic\Core\Configuration;
+use Melodic\Data\DbContextInterface;
 use Melodic\DI\Container;
 use Melodic\DI\ServiceProvider;
+use Melodic\Log\LoggerInterface;
+use Melodic\Session\SessionInterface;
 
 class SecurityServiceProvider extends ServiceProvider
 {
@@ -30,6 +33,13 @@ class SecurityServiceProvider extends ServiceProvider
                 cookieDomain: (string) $config->get('session.cookieDomain', ''),
             );
         });
+
+        // Lets classes that depend on SessionInterface (CsrfToken,
+        // CsrfMiddleware, application code) auto-wire with only this provider
+        // registered. A SessionServiceProvider binding takes precedence.
+        if (!$container->isBound(SessionInterface::class)) {
+            $container->singleton(SessionInterface::class, fn(Container $c) => $c->get(SessionManager::class));
+        }
 
         $container->singleton(AuthProviderRegistry::class, function (Container $c) {
             /** @var AuthConfig $authConfig */
@@ -90,6 +100,11 @@ class SecurityServiceProvider extends ServiceProvider
                 $c->get(AuthProviderRegistry::class),
                 $c->get(SessionManager::class),
                 $c->get(AuthLoginRendererInterface::class),
+                // Only when refresh tokens are in use — otherwise logout would
+                // expire a cookie the application never set.
+                $c->get(Configuration::class)->has('auth.refreshToken') || $c->isBound(RefreshTokenRepositoryInterface::class)
+                    ? $c->get(RefreshTokenConfig::class)
+                    : null,
             );
         });
 
@@ -101,9 +116,12 @@ class SecurityServiceProvider extends ServiceProvider
         });
 
         $container->singleton(RefreshTokenService::class, function (Container $c) {
+            // With a DbContext bound, validateAndRotate() runs in a single
+            // transaction (closes the token-reuse race).
             return new RefreshTokenService(
                 $c->get(RefreshTokenRepositoryInterface::class),
                 $c->get(RefreshTokenConfig::class),
+                $c->isBound(DbContextInterface::class) ? $c->get(DbContextInterface::class) : null,
             );
         });
 
@@ -111,6 +129,17 @@ class SecurityServiceProvider extends ServiceProvider
             return new RefreshTokenMiddleware(
                 $c->get(RefreshTokenService::class),
                 $c->get(RefreshTokenConfig::class),
+                $c->isBound(LoggerInterface::class) ? $c->get(LoggerInterface::class) : null,
+            );
+        });
+
+        $container->singleton(CsrfMiddleware::class, function (Container $c) {
+            /** @var Configuration $config */
+            $config = $c->get(Configuration::class);
+
+            return new CsrfMiddleware(
+                $c->get(SessionManager::class),
+                (array) $config->get('csrf.exceptPaths', ['/api']),
             );
         });
 
@@ -118,6 +147,7 @@ class SecurityServiceProvider extends ServiceProvider
             return new ApiAuthenticationMiddleware(
                 $c->get(AuthConfig::class),
                 $c->get(JwtValidator::class),
+                $c->isBound(LoggerInterface::class) ? $c->get(LoggerInterface::class) : null,
             );
         });
 

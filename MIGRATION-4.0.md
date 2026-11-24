@@ -32,8 +32,11 @@ once.
 config:
 
 ```json
-{ "refresh": { "cookieName": "kingdom_refresh" } }
+{ "auth": { "refreshToken": { "cookieName": "kingdom_refresh" } } }
 ```
+
+(Refresh-token settings are read from `auth.refreshToken`; see
+[`docs/refresh-tokens.md`](docs/refresh-tokens.md).)
 
 ### 3. OIDC callback requires an `id_token`
 

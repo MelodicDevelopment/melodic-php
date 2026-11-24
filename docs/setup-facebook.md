@@ -70,7 +70,12 @@ Facebook uses OAuth2 (not OIDC), so the framework needs a signing key to issue i
 Replace the placeholder values:
 - `PASTE_YOUR_APP_ID_HERE` — your Facebook App ID
 - `PASTE_YOUR_APP_SECRET_HERE` — your Facebook App Secret
-- `replace-with-a-random-secret...` — any random string of 32+ characters
+- `replace-with-a-random-secret...` — any random string of 32+ characters. A shorter key is rejected at startup; generate one with `openssl rand -base64 48`
+
+> **Plain-HTTP local development:** the auth and session cookies are `Secure` by default, and browsers only reliably accept `Secure` cookies over HTTPS (some exempt `localhost`), so over `http://localhost` the login may not stick (typical symptom: `Invalid OAuth state parameter.` on the callback). Put this in `config/config.dev.json` — the gitignored local override file loaded by `$app->loadEnvironmentConfig()` — and never in production config:
+> ```json
+> { "auth": { "cookieSecure": false }, "session": { "cookieSecure": false } }
+> ```
 
 ### Why is `local.signingKey` needed?
 
@@ -86,6 +91,8 @@ Facebook returns user data with its own field names. The `claimMap` tells the fr
 | `name` | `username` | Display name |
 | `email` | `email` | Email address |
 
+Only `sub`, `username`, `email` (and `entitlements`, if mapped) are carried into the JWT.
+
 ## Step 5: Set Up Routes
 
 In your `config/routes.php`, add the auth routes:
@@ -97,15 +104,17 @@ $router->group('/auth', function (Router $router) {
     $router->get('/login', HomeController::class, 'index');
     $router->get('/login/{provider}', HomeController::class, 'index');
     $router->get('/callback/{provider}', HomeController::class, 'index');
-    $router->get('/logout', HomeController::class, 'index');
+    $router->post('/logout', HomeController::class, 'index');
 }, middleware: [AuthCallbackMiddleware::class]);
 ```
+
+`AuthCallbackMiddleware` is provided by `SecurityServiceProvider`, so make sure your entry point calls `$app->register(new SecurityServiceProvider());`. Logout is a CSRF-protected `POST /auth/logout`, not a link — see [Logout](authentication.md#logout).
 
 ## Step 6: Test It
 
 1. Start your app:
    ```bash
-   php -S localhost:8080 -t example/public
+   php -S localhost:8080 -t public
    ```
 2. Visit `http://localhost:8080/auth/login`
 3. Click **Sign in with Facebook**
@@ -126,6 +135,8 @@ To let anyone log in:
 ## Troubleshooting
 
 - **"URL blocked" error**: Your redirect URI doesn't match. Check that `redirectUri` in your config exactly matches what's in **Facebook Login > Settings > Valid OAuth Redirect URIs**.
-- **Email is missing**: The user may not have an email on their Facebook account, or they may have declined the email permission. The `email` scope is requested but Facebook lets users opt out.
+- **Email is missing**: The user may not have an email on their Facebook account, or they may have declined the email permission. The `email` scope is requested but Facebook lets users opt out. The `email` claim is then an empty string.
+- **"Invalid OAuth state parameter"**: The session cookie did not survive the round trip to Facebook — over plain HTTP, set `session.cookieSecure` to `false` (see the note in Step 4).
+- **A 401 "Authentication failed." on every auth route**: Usually the `local` signing config is missing. Set `app.debug` to `true` locally to see the real message.
 - **"App not set up" error**: Make sure you've added the **Facebook Login** product to your app (Step 2).
 - **For production**: Use `https` URLs, update the redirect URI in both your config and the Facebook dashboard, and switch the app to Live mode.

@@ -13,6 +13,9 @@ class Utilities
 	 * left in a request path in production. Output is HTML-escaped so dumping
 	 * user-supplied data cannot inject markup/script.
 	 *
+	 * @deprecated since 4.1 — a debugging leftover, not part of the framework's
+	 *             supported API. Will be removed in 5.0.
+	 *
 	 * @param mixed $_var The variable to dump.
 	 * @return never
 	 */

@@ -14,6 +14,9 @@ class DbContext implements DbContextInterface
 {
     private readonly PDO $pdo;
 
+    /** @var array<class-string, array<string, ReflectionProperty>> */
+    private array $propertyMaps = [];
+
     /** @param array<int, mixed> $options */
     public function __construct(
         PDO|string $dsn,
@@ -59,6 +62,28 @@ class DbContext implements DbContextInterface
         }
 
         return $this->hydrate(new ReflectionClass($class), $row);
+    }
+
+    /**
+     * Stream rows one at a time instead of loading the whole result set into
+     * memory — for exports and large batch jobs.
+     *
+     * @template T of object
+     * @param class-string<T> $class
+     * @param array<string, mixed> $params
+     * @return \Generator<int, T>
+     */
+    public function cursor(string $class, string $sql, array $params = []): \Generator
+    {
+        $statement = $this->prepareAndExecute($sql, $params);
+        $reflector = new ReflectionClass($class);
+
+        while (($row = $statement->fetch(PDO::FETCH_ASSOC)) !== false) {
+            /** @var T $object */
+            $object = $this->hydrate($reflector, $row);
+
+            yield $object;
+        }
     }
 
     /** @param array<string, mixed> $params */
@@ -123,9 +148,25 @@ class DbContext implements DbContextInterface
     private function prepareAndExecute(string $sql, array $params): PDOStatement
     {
         $statement = $this->pdo->prepare($sql);
-        $statement->execute($params);
+        $statement->execute(array_map(self::normalizeParam(...), $params));
 
         return $statement;
+    }
+
+    /**
+     * Make a parameter safe to bind. PDO binds `false` as an empty string
+     * (rejected by strict MySQL for numeric columns) and cannot bind objects
+     * at all, so booleans become ints, backed enums their backing value, and
+     * date/time objects a "Y-m-d H:i:s" string.
+     */
+    private static function normalizeParam(mixed $value): mixed
+    {
+        return match (true) {
+            is_bool($value) => (int) $value,
+            $value instanceof \BackedEnum => $value->value,
+            $value instanceof \DateTimeInterface => $value->format('Y-m-d H:i:s'),
+            default => $value,
+        };
     }
 
     /**
@@ -139,15 +180,45 @@ class DbContext implements DbContextInterface
         }
 
         $instance = $reflector->newInstanceWithoutConstructor();
+        $properties = $this->propertyMap($reflector);
 
         foreach ($row as $column => $value) {
-            if ($reflector->hasProperty($column)) {
-                $property = $reflector->getProperty($column);
+            $property = $properties[$column] ?? null;
+
+            if ($property !== null) {
                 $property->setValue($instance, $this->castValue($property, $value));
             }
         }
 
         return $instance;
+    }
+
+    /**
+     * Column-name → property lookup, built once per class instead of doing
+     * two reflection lookups per column per row.
+     *
+     * @param ReflectionClass<object> $reflector
+     * @return array<string, ReflectionProperty>
+     */
+    private function propertyMap(ReflectionClass $reflector): array
+    {
+        $class = $reflector->getName();
+
+        if (!isset($this->propertyMaps[$class])) {
+            $map = [];
+
+            for ($current = $reflector; $current !== false; $current = $current->getParentClass()) {
+                foreach ($current->getProperties() as $property) {
+                    if (!$property->isStatic()) {
+                        $map[$property->getName()] ??= $property;
+                    }
+                }
+            }
+
+            $this->propertyMaps[$class] = $map;
+        }
+
+        return $this->propertyMaps[$class];
     }
 
     private function castValue(ReflectionProperty $property, mixed $value): mixed

@@ -12,9 +12,13 @@ class OAuthClient
     ) {
     }
 
+    /**
+     * @deprecated since 4.1 — the auth providers build their own authorization
+     *             URLs; nothing in the framework calls this. Will be removed in 5.0.
+     */
     public function getAuthorizationUrl(string $state, string $codeVerifier): string
     {
-        $codeChallenge = rtrim(strtr(base64_encode(hash('sha256', $codeVerifier, true)), '+/', '-_'), '=');
+        $codeChallenge = self::codeChallenge($codeVerifier);
 
         $params = http_build_query([
             'response_type' => 'code',
@@ -29,7 +33,11 @@ class OAuthClient
         return $this->provider->getAuthorizationEndpoint() . '?' . $params;
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @deprecated since 4.1 — unused by the framework (see getAuthorizationUrl()).
+     *             Will be removed in 5.0.
+     * @return array<string, mixed>
+     */
     public function exchangeCode(string $code, string $codeVerifier): array
     {
         $postData = http_build_query([
@@ -46,6 +54,12 @@ class OAuthClient
             ['Content-Type' => 'application/x-www-form-urlencoded'],
             $postData,
         );
+    }
+
+    /** PKCE S256 challenge for a code verifier (RFC 7636 §4.2). */
+    public static function codeChallenge(string $codeVerifier): string
+    {
+        return rtrim(strtr(base64_encode(hash('sha256', $codeVerifier, true)), '+/', '-_'), '=');
     }
 
     public static function generateCodeVerifier(): string
@@ -68,6 +82,11 @@ class OAuthClient
      */
     public static function requestJson(string $method, string $url, array $headers = [], ?string $body = null): array
     {
+        // Some providers (GitHub's API) reject requests without a User-Agent.
+        if (!array_key_exists('User-Agent', $headers)) {
+            $headers['User-Agent'] = 'Melodic-PHP/' . \Melodic\Framework::VERSION;
+        }
+
         $headerLines = "Accept: application/json\r\n";
 
         foreach ($headers as $name => $value) {
@@ -150,5 +169,24 @@ class OAuthClient
         }
 
         return $status;
+    }
+
+    /**
+     * The message shown on the login page when a provider redirects back with
+     * `?error=`. That parameter is attacker-controllable (a crafted callback
+     * link needs no valid state), so only the standard OAuth 2.0 / OIDC error
+     * codes are echoed and `error_description` is never used.
+     */
+    public static function callbackErrorMessage(string $error): string
+    {
+        $known = [
+            'access_denied', 'invalid_request', 'unauthorized_client', 'unsupported_response_type',
+            'invalid_scope', 'server_error', 'temporarily_unavailable', 'login_required',
+            'consent_required', 'interaction_required', 'account_selection_required',
+        ];
+
+        return in_array($error, $known, true)
+            ? "Sign-in failed ({$error}). Please try again."
+            : 'Sign-in failed. Please try again.';
     }
 }

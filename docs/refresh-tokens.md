@@ -1,6 +1,8 @@
 # Refresh Tokens
 
-Melodic PHP supports secure refresh token rotation for long-lived sessions. The framework provides the model, service logic, middleware, and cookie helper. Your application provides the database repository.
+Melodic PHP supports secure refresh token rotation for long-lived sessions. The framework provides the model, service logic, middleware, and cookie helper. Your application provides the database repository, the login/refresh/logout endpoints, and the code that issues the short-lived JWT.
+
+The built-in login flow (`AuthCallbackMiddleware`, see [Authentication](authentication.md)) does not issue refresh tokens — they are created by your own login endpoint, as shown below.
 
 ## How It Works
 
@@ -20,25 +22,26 @@ Old refresh token is revoked — if anyone replays it, the entire family is revo
 - Sent only as HTTP-only cookies (never in response bodies, never accessible to JavaScript)
 - Rotated on every use — each refresh issues a new token and revokes the old one
 - Family-based reuse detection — if a revoked token is presented, all tokens in the family are revoked
+- A rejected token always produces the same generic `401` — the client cannot tell "reuse detected" from "invalid" or "expired"
 
 ---
 
 ## Configuration
 
-Add a `refreshToken` section inside `auth` in your `config.json`:
+Add a `refreshToken` section inside `auth` in your `config/config.json` (the settings are read from `auth.refreshToken`):
 
 ```json
 {
     "auth": {
         "local": {
-            "signingKey": "your-256-bit-secret",
+            "signingKey": "replace-with-a-random-secret-at-least-32-characters-long",
             "issuer": "my-app",
             "audience": "my-app",
             "tokenLifetime": 900
         },
         "refreshToken": {
             "tokenLifetime": 604800,
-            "cookieName": "kingdom_refresh",
+            "cookieName": "melodic_refresh",
             "cookieDomain": ".example.com",
             "cookiePath": "/auth/refresh",
             "cookieSecure": true,
@@ -54,13 +57,17 @@ Add a `refreshToken` section inside `auth` in your `config.json`:
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `tokenLifetime` | int | `604800` | Refresh token lifetime in seconds (default: 7 days) |
-| `cookieName` | string | `kingdom_refresh` | Name of the HTTP-only cookie |
+| `cookieName` | string | `melodic_refresh` | Name of the HTTP-only cookie |
 | `cookieDomain` | string | `""` | Cookie domain (e.g. `.example.com` for subdomains) |
-| `cookiePath` | string | `/auth/refresh` | Cookie path — scoped to the refresh endpoint |
+| `cookiePath` | string | `/auth/refresh` | Cookie path — scoped to the refresh endpoint. The browser only sends the cookie to URLs under this path, so it must cover your refresh route |
 | `cookieSecure` | bool | `true` | Require HTTPS (`false` for local development) |
 | `cookieSameSite` | string | `Lax` | SameSite attribute (`Lax`, `Strict`, or `None`) |
 
-> **Tip:** For local development, set `cookieSecure` to `false` in `config.dev.json`:
+Every key is optional; the cookie is always `HttpOnly`.
+
+> **Upgrading from before 4.0:** the default cookie name was `kingdom_refresh`. If you relied on the default, existing refresh cookies stop matching after the upgrade and users sign in once more. To avoid that, pin the old name with `"cookieName": "kingdom_refresh"` under `auth.refreshToken`.
+
+> **Tip:** For plain-HTTP local development, set `cookieSecure` to `false` in `config/config.dev.json` (the gitignored local override loaded by `$app->loadEnvironmentConfig()`). The auth and session cookies have the same default — see [Cookies and Local Development](authentication.md#cookies-and-local-development):
 > ```json
 > { "auth": { "refreshToken": { "cookieSecure": false } } }
 > ```
@@ -152,7 +159,7 @@ class RefreshTokenRepository implements RefreshTokenRepositoryInterface
     public function findByTokenHash(string $hash): ?RefreshToken
     {
         $row = $this->context->queryFirst(
-            null,
+            \stdClass::class,
             'SELECT * FROM RefreshTokens WHERE TokenHash = :hash',
             ['hash' => $hash],
         );
@@ -255,7 +262,20 @@ class AppServiceProvider extends ServiceProvider
 }
 ```
 
-> **Important:** Register `AppServiceProvider` **before** `SecurityServiceProvider` in your entry point, so the binding is available when the security services are resolved.
+Bindings are resolved lazily, so for this binding it does not matter whether `AppServiceProvider` is registered before or after `SecurityServiceProvider`. If the repository is not bound, resolving `RefreshTokenService` or `RefreshTokenMiddleware` throws a `ContainerException` (a 500).
+
+### Optional: Transactional Rotation and Logging
+
+`SecurityServiceProvider` wires two optional collaborators in when they are explicitly bound in the container (since 4.1; before that you had to rebind the service and middleware yourself to get either):
+
+| Bound in the container | Effect |
+|---|---|
+| `Melodic\Data\DbContextInterface` | Passed to `RefreshTokenService`, which makes [`validateAndRotate()`](#atomic-rotation) run in a single transaction |
+| `Melodic\Log\LoggerInterface` (for example via `LoggingServiceProvider`) | Passed to `RefreshTokenMiddleware`, which then logs why a token was rejected |
+
+Both are looked up lazily, so registration order does not matter. Without them the service is not transactional and the rejection reason is discarded.
+
+The `DbContextInterface` must be the same shared (singleton) instance your repository uses, or the repository's statements run outside the transaction.
 
 ---
 
@@ -278,7 +298,19 @@ $router->group('/api', function (Router $router) {
 }, middleware: [ApiAuthenticationMiddleware::class]);
 ```
 
+`RefreshTokenMiddleware` reads the refresh cookie and validates it before your action runs:
+
+| Situation | Response |
+|---|---|
+| No refresh cookie (or an empty one) | `401` `{"error": "Refresh token required."}` |
+| Token unknown, expired, revoked, or reused | `401` `{"error": "Authentication failed."}` |
+| Token valid | Sets the `refreshToken` (`RefreshToken`) and `refreshTokenUserId` (`int`) request attributes and calls the action |
+
+The response is deliberately the same for every kind of invalid token. The real reason (`Invalid refresh token.`, `Refresh token has expired.`, `Refresh token reuse detected.`) is written to the log as a warning — but only if the middleware was given a logger (which happens when a `LoggerInterface` is bound, see [above](#optional-transactional-rotation-and-logging)); without one it is discarded.
+
 ### Auth Controller
+
+The JWT you issue must be one the framework's `JwtValidator` accepts, or `ApiAuthenticationMiddleware` will reject it: sign it with the `auth.local` signing key and algorithm, and include `iss` and `aud` matching `auth.local`, plus an `exp` claim. Refresh tokens are keyed by an **integer** user ID.
 
 ```php
 <?php
@@ -340,6 +372,7 @@ class AuthController extends ApiController
     public function logout(): Response
     {
         // Revoke all refresh tokens for this user
+        // (the route must be behind ApiAuthenticationMiddleware for a user context to exist)
         $userContext = $this->getUserContext();
         if ($userContext?->isAuthenticated()) {
             $this->refreshTokenService->revokeAllForUser((int) $userContext->getUser()->id);
@@ -384,6 +417,29 @@ $result = $this->refreshTokenService->rotate($currentToken);
 $response = RefreshTokenCookieHelper::attach($response, $result['token'], $config);
 ```
 
+#### Atomic Rotation
+
+`validateAndRotate()` validates the raw token and rotates it in one call:
+
+```php
+$rawToken = (string) $this->request->cookie($this->refreshTokenConfig->cookieName, '');
+
+// Throws SecurityException if the token is invalid, expired, revoked or reused
+$result = $this->refreshTokenService->validateAndRotate($rawToken);
+$userId = $result['model']->userId;
+```
+
+It is transactional when the service was constructed with a `DbContextInterface` as its third argument — which `SecurityServiceProvider` does whenever one is bound (see [Optional: Transactional Rotation and Logging](#optional-transactional-rotation-and-logging)). Without one it simply calls `validate()` then `rotate()`, exactly like the middleware-plus-`rotate()` flow above.
+
+With a `DbContext`, both steps run in a single database transaction, which narrows the window in which two concurrent requests presenting the same token can each pass validation before either revokes the family. For a hard guarantee, your repository's `findByTokenHash()` should also lock the row (`SELECT ... FOR UPDATE`, or your database's equivalent).
+
+Things to know:
+
+- An uncaught `SecurityException` from `validateAndRotate()` becomes a `401` through the framework's exception handler, with the message masked as `Authentication failed.` outside debug mode.
+- Reuse detection survives the transaction. A reused token makes `validate()` revoke the family and throw `RefreshTokenReuseException` (a `SecurityException` carrying the `familyId`); the throw rolls the transaction back, so `validateAndRotate()` re-applies the family revocation outside the transaction before rethrowing. Do not call `validateAndRotate()` inside a transaction of your own: the rethrown exception rolls your transaction back too, and the revocation with it. If you must, catch `RefreshTokenReuseException` outside your transaction and call `revokeByFamily($e->familyId)` on your `RefreshTokenRepositoryInterface` there.
+- If you call `validate()` inside a transaction of your own, that rollback is yours to handle: catch `RefreshTokenReuseException` and call your repository's `revokeByFamily($e->familyId)` once the transaction has rolled back.
+- `RefreshTokenMiddleware` calls `validate()` on its own, outside any transaction. If you keep it on the route in front of `validateAndRotate()`, the token is validated twice; that is harmless.
+
 ### 3. Logout — Revoke All
 
 ```php
@@ -393,6 +449,8 @@ $this->refreshTokenService->revokeAllForUser($userId);
 // Clear the cookie
 $response = RefreshTokenCookieHelper::clear($response, $config);
 ```
+
+The framework's built-in `POST /auth/logout` (see [Logout](authentication.md#logout)) clears the refresh cookie too (since 4.1), but never revokes the stored tokens — that remains your endpoint's job.
 
 ### 4. Cleanup — Delete Expired
 
@@ -416,7 +474,9 @@ Refresh tokens use **family-based rotation** to detect token theft:
 This means:
 - **Normal use:** Each refresh works once, then the old token is invalid
 - **Stolen token replayed:** The family is revoked, both attacker and user must re-authenticate
-- **Race condition:** If two requests try to refresh simultaneously, the second one triggers reuse detection
+- **Race condition:** If two requests present the same token one after the other, the second one triggers reuse detection. If they arrive truly simultaneously, both can pass validation before either has rotated — use [`validateAndRotate()`](#atomic-rotation) with a `DbContext` and a row lock to close that window
+
+Presenting an unknown or merely expired token does not revoke anything; only a revoked token or a stale generation does.
 
 ---
 
@@ -426,22 +486,22 @@ This means:
 
 ```json
 {
-    "app": { "name": "Kingdom" },
+    "app": { "name": "My App" },
     "database": {
-        "dsn": "sqlsrv:Server=localhost;Database=Kingdom"
+        "dsn": "sqlsrv:Server=localhost;Database=MyApp"
     },
     "auth": {
         "api": { "enabled": true },
         "web": { "enabled": true },
         "local": {
-            "signingKey": "replace-with-a-random-256-bit-key",
-            "issuer": "kingdom",
-            "audience": "kingdom",
+            "signingKey": "replace-with-a-random-secret-at-least-32-characters-long",
+            "issuer": "my-app",
+            "audience": "my-app",
             "tokenLifetime": 900
         },
         "refreshToken": {
             "tokenLifetime": 604800,
-            "cookieName": "kingdom_refresh",
+            "cookieName": "melodic_refresh",
             "cookieDomain": "",
             "cookiePath": "/auth/refresh",
             "cookieSecure": true,
@@ -495,18 +555,28 @@ use Melodic\Security\ApiAuthenticationMiddleware;
 use Melodic\Security\RefreshTokenMiddleware;
 
 return function (Router $router): void {
-    // Auth endpoints
+    // Built-in browser login (cookie session). AuthCallbackMiddleware answers
+    // these itself, so the controller/action is a placeholder that never runs.
     $router->group('/auth', function (Router $router) {
-        $router->get('/login', AuthController::class, 'index');
-        $router->get('/login/{provider}', AuthController::class, 'index');
-        $router->get('/callback/{provider}', AuthController::class, 'index');
-        $router->post('/callback/{provider}', AuthController::class, 'index');
-        $router->get('/logout', AuthController::class, 'logout');
+        $router->get('/login', AuthController::class, 'login');
+        $router->get('/login/{provider}', AuthController::class, 'login');
+        $router->get('/callback/{provider}', AuthController::class, 'login');
+        $router->post('/callback/{provider}', AuthController::class, 'login');
+        $router->post('/logout', AuthController::class, 'login');
     }, middleware: [AuthCallbackMiddleware::class]);
+
+    // Token login: issues the JWT and the refresh token cookie
+    $router->post('/auth/token', AuthController::class, 'login');
 
     // Refresh endpoint (only RefreshTokenMiddleware, no JWT auth needed)
     $router->post('/auth/refresh', AuthController::class, 'refresh',
         middleware: [RefreshTokenMiddleware::class],
+    );
+
+    // Token logout: revokes the user's refresh tokens. Not /auth/logout —
+    // that path is taken by AuthCallbackMiddleware above.
+    $router->post('/auth/revoke', AuthController::class, 'logout',
+        middleware: [ApiAuthenticationMiddleware::class],
     );
 
     // Protected API routes
@@ -530,9 +600,9 @@ use Melodic\Security\SecurityServiceProvider;
 use App\Providers\AppServiceProvider;
 
 $app = new Application(__DIR__ . '/..');
-$app->loadConfig('config/config.json');
+$app->loadEnvironmentConfig(); // config.json → config.{APP_ENV}.json → config.dev.json
 
-// Register app provider first (binds RefreshTokenRepositoryInterface)
+// Order does not matter for these bindings; they are resolved lazily
 $app->register(new AppServiceProvider());
 $app->register(new SecurityServiceProvider());
 

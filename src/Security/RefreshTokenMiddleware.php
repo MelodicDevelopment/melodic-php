@@ -28,7 +28,8 @@ class RefreshTokenMiddleware implements MiddlewareInterface
     {
         $rawToken = $request->cookie($this->config->cookieName);
 
-        if ($rawToken === null) {
+        // is_string: a cookie sent as `name[]=x` arrives as an array.
+        if (!is_string($rawToken) || $rawToken === '') {
             return new JsonResponse(['error' => 'Refresh token required.'], 401);
         }
 

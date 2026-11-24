@@ -73,7 +73,6 @@ Open your `config/config.json`:
                 "clientId": "PASTE_YOUR_CLIENT_ID_HERE",
                 "clientSecret": "PASTE_YOUR_CLIENT_SECRET_HERE",
                 "redirectUri": "http://localhost:8080/auth/callback/okta",
-                "audience": "",
                 "scopes": "openid profile email"
             }
         }
@@ -88,8 +87,16 @@ Replace the placeholder values:
 
 ### About the `audience` field
 
-- If you're using the **org authorization server** (discovery URL without `/oauth2/`), leave `audience` as `""` or remove it
-- If you're using a **custom authorization server** (discovery URL with `/oauth2/default`), set `audience` to your Client ID
+Leave `audience` out. It defaults to your Client ID, which is what Okta puts in the ID token's `aud` for both the **org authorization server** (discovery URL without `/oauth2/`) and a **custom authorization server** (discovery URL with `/oauth2/default`).
+
+Do not set it to an API audience such as `api://default`: the login callback validates the ID token against this value and would fail with `Invalid token audience.`
+
+Keep `openid` in `scopes` — the callback requires an `id_token` and does not fall back to the access token.
+
+> **Plain-HTTP local development:** the auth and session cookies are `Secure` by default, and browsers only reliably accept `Secure` cookies over HTTPS (some exempt `localhost`), so over `http://localhost` the login may not stick (typical symptom: `Invalid OAuth state parameter.` on the callback). Put this in `config/config.dev.json` — the gitignored local override file loaded by `$app->loadEnvironmentConfig()` — and never in production config:
+> ```json
+> { "auth": { "cookieSecure": false }, "session": { "cookieSecure": false } }
+> ```
 
 ## Step 7: Set Up Routes
 
@@ -102,15 +109,17 @@ $router->group('/auth', function (Router $router) {
     $router->get('/login', HomeController::class, 'index');
     $router->get('/login/{provider}', HomeController::class, 'index');
     $router->get('/callback/{provider}', HomeController::class, 'index');
-    $router->get('/logout', HomeController::class, 'index');
+    $router->post('/logout', HomeController::class, 'index');
 }, middleware: [AuthCallbackMiddleware::class]);
 ```
+
+`AuthCallbackMiddleware` is provided by `SecurityServiceProvider`, so make sure your entry point calls `$app->register(new SecurityServiceProvider());`. Logout is a CSRF-protected `POST /auth/logout`, not a link — see [Logout](authentication.md#logout).
 
 ## Step 8: Test It
 
 1. Start your app:
    ```bash
-   php -S localhost:8080 -t example/public
+   php -S localhost:8080 -t public
    ```
 2. Visit `http://localhost:8080/auth/login`
 3. Click **Sign in with Okta**
@@ -122,5 +131,8 @@ $router->group('/auth', function (Router $router) {
 - **"redirect_uri_mismatch" error**: The redirect URI in your config must exactly match what's configured in Okta. Check for trailing slashes and matching protocols.
 - **"login_required" error**: You may need to sign in to Okta first, or your session has expired.
 - **"access_denied" error**: Your user may not be assigned to the application. Go to **Applications > Your App > Assignments** and add your user.
+- **"Invalid token audience"**: Remove `audience` from the provider config (see above).
+- **API requests with an Okta Bearer token get a 401**: The token must come from the same authorization server as `discoveryUrl` (org vs. `/oauth2/default`) and its `aud` must match the provider's `audience` (by default the client ID).
+- **"Invalid OAuth state parameter"**: The session cookie did not survive the round trip to Okta — over plain HTTP, set `session.cookieSecure` to `false` (see the note in Step 6).
 - **Discovery URL returns 404**: Double-check your Okta domain. Try both the org URL (`/.well-known/openid-configuration`) and the custom auth server URL (`/oauth2/default/.well-known/openid-configuration`).
 - **For production**: Update `redirectUri` to your production `https` URL and update the redirect URI in Okta to match.

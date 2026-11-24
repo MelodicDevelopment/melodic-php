@@ -1,135 +1,106 @@
 # Melodic PHP Framework — Feature Roadmap
 
-A prioritized list of missing features and improvements, organized by impact.
+What has shipped, and what is still open, as of **4.1.0**. Items are grouped by
+status and then by impact. See [`CHANGELOG.md`](../CHANGELOG.md) for the detail
+behind each shipped item.
 
 ---
 
-## High Priority
+## Shipped
 
-### Request Validation
-
-Every controller action that accepts input needs validation, and there's no built-in support. Controllers currently rely on ad-hoc manual checks.
-
-- Declarative rule definitions (`required`, `string`, `email`, `min`, `max`, `in`, `regex`, etc.)
-- Structured validation error responses (field-level error messages, 422 status code)
-- Integration with `BadRequestException` / `HttpException` hierarchy
-- Reusable rule sets (e.g., `CreateUserRequest` classes that define rules and can be type-hinted in controller actions)
-- Custom rule support
-
-### Caching Abstraction
-
-No caching layer exists. OIDC discovery documents are cached to `sys_get_temp_dir()` with no expiry management.
-
-- `CacheInterface` with `get`, `set`, `has`, `delete`, `clear`
-- File-based implementation with TTL support
-- In-memory (array) implementation for testing
-- `CacheServiceProvider` with configurable driver and path
-- Useful for query result caching in services, OIDC discovery, and rate limiting storage
-
-### Rate Limiting Middleware
-
-API endpoints have no protection against abuse.
-
-- Token bucket or fixed window algorithm
-- Configurable limits per route or route group
-- `Retry-After` and `X-RateLimit-*` response headers
-- Throws 429 `HttpException` (new `TooManyRequestsException`)
-- Pluggable storage backend (file-based, cache-based)
+| Feature | Since | Where |
+|---|---|---|
+| Request validation — attribute rules on DTOs, automatic model binding, 400 with field-level errors | 1.x; nullable-by-default 3.0; `RuleInterface`, `#[Url]`, `#[Uuid]`, `#[Date]`, nested validation, `#[FromQuery]` 4.1 | [validation.md](validation.md) |
+| Caching abstraction — `CacheInterface`, `FileCache`, `ArrayCache`, `CacheServiceProvider`; PSR-16 adapter | 1.x; adapter 4.1 | [cache.md](cache.md) |
+| Event dispatcher — priorities, propagation stop, `EventServiceProvider` | 1.x | [events.md](events.md) |
+| CLI — console runner, `route:list`, `cache:clear`, `make:project`, `make:entity`, `make:config`, `claude:install` | 1.x | [console.md](console.md) |
+| CSRF protection — login/logout forms (3.0); generic `CsrfMiddleware` with `$csrfField` view helper (4.1) | 3.0 / 4.1 | [authentication.md](authentication.md) |
+| Rate limiting — `RateLimitMiddleware` (fixed window, cache-backed, `Retry-After` / `X-RateLimit-*`) | 4.1 | [`MELODIC_PHP.md`](../MELODIC_PHP.md#12-middleware) |
+| Security headers — `SecurityHeadersMiddleware` (nosniff, frame options, referrer policy, optional HSTS/CSP) | 4.1 | [`MELODIC_PHP.md`](../MELODIC_PHP.md#12-middleware) |
+| Database migrations — plain-SQL `Migrator`, `migrate`, `migrate:rollback`, `migrate:status`, `make:migration` | 4.1 | [console.md](console.md) |
+| Pagination — `Paginator` / `PaginatedResult` | 4.1 | [`MELODIC_PHP.md`](../MELODIC_PHP.md#9-data-access-queries-commands-services) |
+| In-process request handling for tests — `Application::handle(Request): Response` | 4.1 | [`MELODIC_PHP.md`](../MELODIC_PHP.md#15-testing) |
+| Named routes, URL generation, parameter constraints, `PATCH` in `apiResource()` | 4.1 | [`README.md`](../README.md) |
+| Environment placeholders in config (`${VAR}`, `${VAR:-default}`) | 4.1 | [configuration.md](configuration.md) |
+| PSR interop — PSR-11 container, PSR-3 and PSR-16 adapters | 4.1 | [`CHANGELOG.md`](../CHANGELOG.md) |
+| Lists of models in request bodies — `#[ListOf(X::class)]`, hydrated and validated with indexed keys | 4.1 | [validation.md](validation.md) |
+| CORS / security headers on error responses — `ResponseDecoratorInterface` | 4.1 | [error-handling.md](error-handling.md) |
 
 ---
 
-## Medium Priority
+## Open — higher priority
 
-### Event Dispatcher
+### Trusted-proxy support
 
-No mechanism for decoupled cross-cutting communication between services. Adding side effects (logging, notifications, cache invalidation) currently requires direct coupling.
+`Request::ip()`, `isSecure()` and `host()` deliberately ignore forwarded
+headers. Behind a load balancer the application must read them itself.
 
-- `EventDispatcherInterface` with `dispatch()` and `listen()`
-- Listener registration via DI container (supports auto-wiring)
-- `EventServiceProvider` for grouping listener registrations
-- Useful for audit trails, notifications, and keeping services focused
+- Configurable trusted proxy list
+- `X-Forwarded-For` / `-Proto` / `-Host` honoured only from trusted peers
 
-### CLI Tooling
+### First-party test utilities
 
-No command-line interface for common development tasks. Everything is manual.
+`Application::handle()` and the `ArrayCache` / `ArraySession` / `NullLogger`
+doubles exist; convenience on top of them does not.
 
-- Console application runner with command registration
-- Built-in commands: `serve` (wraps PHP built-in server), `routes:list`, `cache:clear`
-- Code generation: `make:controller`, `make:service`, `make:query`, `make:command`, `make:middleware`
-- Extensible command interface for app-specific commands
-
-### Database Migrations
-
-Schema management is entirely manual. The example app creates tables inline during bootstrap.
-
-- Migration files with `up()` and `down()` methods
-- Migration runner tracking applied migrations in a `migrations` table
-- CLI commands: `migrate`, `migrate:rollback`, `migrate:status`
-- Timestamped migration file generation
-
-### Pagination
-
-No built-in support for paginating query results.
-
-- `PaginatedResult` DTO with items, total, page, per-page, and page count
-- Helper methods on `DbContext` or a `Paginator` class
-- Standard query parameter conventions (`?page=1&per_page=25`)
-- Link header or metadata generation for API responses
+- `TestCase` base class that boots the application
+- Request builder (`get()`, `postJson()`, `actingAs()`) and response assertions
+- Database seeding helpers
 
 ---
 
-## Lower Priority
+## Open — medium priority
 
-### CSRF Protection
+### Finer-grained code generation
 
-MVC form submissions have no CSRF token verification.
+- `make:controller`, `make:service`, `make:query`, `make:command`,
+  `make:middleware`
+- `make:entity` options for fields, so generated commands contain real SQL
+  and controllers take request DTOs
+- `serve` command wrapping PHP's built-in server
 
-- Token generation and session storage
-- `CsrfMiddleware` for validating tokens on state-changing requests
-- Template helper for embedding tokens in forms
-- Automatic exclusion of API routes (already use JWT)
+### Auth
 
-### File Storage Abstraction
+- A public helper for issuing the application's own access JWT after a
+  refresh (`LocalJwtIssuer` is internal)
+- Separate audiences for the login `id_token` and API bearer tokens
+- Configurable logout path and post-logout redirect
 
-No abstraction for file operations.
+### Path resolution
+
+- Resolve relative `logging.path` and `auth.oidcCacheDir` against the project
+  root instead of the working directory (needs a migration path for existing
+  apps)
+
+---
+
+## Open — lower priority
+
+### File storage abstraction
 
 - `StorageInterface` with `put`, `get`, `delete`, `exists`, `url`
-- Local filesystem driver
-- Configurable disk definitions
-- Upload handling utilities
+- Local filesystem driver, configurable disks
+- An uploaded-file object on top of `Request::file()`
 
-### Queue / Background Jobs
+### Queue / background jobs
 
-No support for deferring work to background processing.
+- `JobInterface` with `handle()`
+- Database-backed driver, synchronous driver for tests
+- CLI worker with retry and failure handling
 
-- `JobInterface` with `handle()` method
-- Database-backed queue driver (uses existing `DbContext`)
-- Synchronous driver for testing
-- CLI worker command for processing queued jobs
-- Retry and failure handling
-
-### Testing Utilities
-
-No framework-level testing support.
-
-- `TestCase` base class with app bootstrapping
-- HTTP testing helpers (simulated requests without a server)
-- In-memory `DbContext` seeding utilities
-- Middleware testing helpers
-- `NullLogger` is already available as a test double
-
-### Response Caching / ETags
-
-No HTTP-level caching support.
+### Response caching / ETags
 
 - `ETag` generation middleware
-- `Cache-Control` header helpers
-- Conditional response handling (`304 Not Modified`)
+- `Cache-Control` helpers and `304 Not Modified` handling
 
 ---
 
 ## Notes
 
-- Features should follow existing conventions: PascalCase classes, camelCase methods, ServiceProvider pattern for registration, interface-first design
-- Each feature should work independently — no feature should require another unreleased feature
-- PSR compatibility should be maintained where applicable (PSR-3 logging is already in place, validation could align with common conventions)
+- Features follow existing conventions: PascalCase classes, camelCase methods,
+  the ServiceProvider pattern for registration, interface-first design.
+- Each feature works independently — none requires another unreleased feature.
+- PSR compatibility is maintained where it costs nothing (PSR-11 container;
+  PSR-3 and PSR-16 through adapters).
+- A shipped feature is documented in [`MELODIC_PHP.md`](../MELODIC_PHP.md) in
+  the same release, because that file is what consumer projects read.

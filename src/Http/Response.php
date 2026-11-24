@@ -32,6 +32,31 @@ class Response
         return $response;
     }
 
+    public function withoutHeader(string $name): static
+    {
+        $response = clone $this;
+
+        foreach (array_keys($response->headers) as $existing) {
+            if (strcasecmp($existing, $name) === 0) {
+                unset($response->headers[$existing]);
+            }
+        }
+
+        return $response;
+    }
+
+    /** Header lookup by case-insensitive name. */
+    public function getHeader(string $name): ?string
+    {
+        foreach ($this->headers as $existing => $value) {
+            if (strcasecmp($existing, $name) === 0) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
     public function withBody(string $body): static
     {
         $response = clone $this;

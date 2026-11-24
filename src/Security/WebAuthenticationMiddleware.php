@@ -30,23 +30,30 @@ class WebAuthenticationMiddleware implements MiddlewareInterface
         $token = $request->cookie($this->config->cookieName);
 
         if ($token !== null && is_string($token) && $token !== '') {
-            try {
-                $claims = $this->validator->validate($token);
-                $userContext = UserContext::fromClaims($claims);
-                $request = $request->withAttribute('userContext', $userContext);
+            $userContext = null;
 
-                return $handler->handle($request);
+            try {
+                $userContext = UserContext::fromClaims($this->validator->validate($token));
             } catch (SecurityException) {
                 // Invalid token — fall through to redirect
+            }
+
+            // Outside the try: a SecurityException thrown by the application
+            // itself (controller, later middleware) must reach the error
+            // handler, not be mistaken for a bad token and turned into a
+            // login redirect.
+            if ($userContext !== null) {
+                return $handler->handle($request->withAttribute('userContext', $userContext));
             }
         }
 
         // Only remember local paths as the post-login target — a crafted path
         // like "/\evil.com" would otherwise bounce the user off-site after login.
-        $path = $request->path();
+        // The query string is kept so the user lands back on the same page.
+        $target = $request->uri();
 
-        if (SafeRedirect::isSafePath($path)) {
-            $this->session->set('melodic_redirect_after_login', $path);
+        if (RedirectResponse::isLocalPath($target)) {
+            $this->session->set('melodic_redirect_after_login', $target);
         }
 
         return new RedirectResponse($this->config->loginPath);

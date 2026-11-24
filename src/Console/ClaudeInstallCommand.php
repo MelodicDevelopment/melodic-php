@@ -51,6 +51,11 @@ class ClaudeInstallCommand extends Command
         if (!file_exists($claudeMdPath)) {
             file_put_contents($claudeMdPath, self::CLAUDE_MD_STUB);
             $this->writeln('  Created  CLAUDE.md');
+        } elseif (!str_contains((string) file_get_contents($claudeMdPath), 'MELODIC_PHP.md')) {
+            // Existing CLAUDE.md: only append the pointer to the framework
+            // reference (nothing else in the file is touched).
+            file_put_contents($claudeMdPath, PHP_EOL . self::REFERENCE_POINTER, FILE_APPEND);
+            $this->writeln('  Updated  CLAUDE.md (added Melodic framework reference)');
         } else {
             $this->writeln('  Skipped  CLAUDE.md (already exists)');
         }
@@ -106,10 +111,27 @@ class ClaudeInstallCommand extends Command
         return $path;
     }
 
+    private const REFERENCE_POINTER = <<<'MARKDOWN'
+## Melodic framework reference
+
+Before writing or changing code that uses the Melodic framework, read the
+framework's usage reference (it ships with the installed package):
+
+@vendor/melodicdev/framework/MELODIC_PHP.md
+
+MARKDOWN;
+
     private const CLAUDE_MD_STUB = <<<'MARKDOWN'
 # Project
 
 This project is built with the [Melodic PHP Framework](https://github.com/MelodicDevelopment/melodic-php).
+
+## Melodic framework reference
+
+Before writing or changing code that uses the Melodic framework, read the
+framework's usage reference (it ships with the installed package):
+
+@vendor/melodicdev/framework/MELODIC_PHP.md
 
 ## Architecture
 

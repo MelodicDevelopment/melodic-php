@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Melodic\Validation\Rules;
 
 use Attribute;
+use Melodic\Validation\RuleInterface;
 
 #[Attribute(Attribute::TARGET_PROPERTY)]
-class Pattern
+class Pattern implements RuleInterface
 {
     public readonly string $message;
 

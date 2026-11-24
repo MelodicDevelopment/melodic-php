@@ -6,6 +6,14 @@ namespace Melodic\Security;
 
 class OidcProvider
 {
+    /** Minimum seconds between forced JWKS refreshes. */
+    private const MIN_REFRESH_INTERVAL = 60;
+
+    /** Seconds to keep serving a stale document before retrying a failed fetch. */
+    private const STALE_RETRY_INTERVAL = 60;
+
+    private bool $cacheDirChecked = false;
+
     public function __construct(
         private readonly string $discoveryUrl,
         private readonly string $cacheDir,
@@ -22,14 +30,31 @@ class OidcProvider
     /** @return array<string, mixed> */
     public function getJwks(): array
     {
-        $discovery = $this->discover();
-        $jwksUri = $discovery['jwks_uri'] ?? '';
+        return $this->fetchCached('oidc_jwks.json', $this->jwksUri());
+    }
 
-        if ($jwksUri === '') {
+    /**
+     * Refetch the key set, bypassing the normal cache TTL — used when a token
+     * is signed with a key id the cached set does not contain (the provider
+     * rotated its keys). Throttled to one fetch per minute so a stream of
+     * bogus tokens cannot force a network call per request.
+     *
+     * @return array<string, mixed>
+     */
+    public function refreshJwks(): array
+    {
+        return $this->fetchCached('oidc_jwks.json', $this->jwksUri(), self::MIN_REFRESH_INTERVAL);
+    }
+
+    private function jwksUri(): string
+    {
+        $jwksUri = $this->discover()['jwks_uri'] ?? '';
+
+        if (!is_string($jwksUri) || $jwksUri === '') {
             throw new SecurityException('OIDC discovery document missing jwks_uri.');
         }
 
-        return $this->fetchCached('oidc_jwks.json', $jwksUri);
+        return $jwksUri;
     }
 
     public function getIssuer(): string
@@ -68,37 +93,140 @@ class OidcProvider
             ?? throw new SecurityException('OIDC discovery document missing token_endpoint.');
     }
 
-    /** @return array<string, mixed> */
-    private function fetchCached(string $filename, string $url): array
+    /**
+     * @param int|null $maxAge Treat a cache entry older than this many seconds
+     *                         as stale (defaults to the configured TTL).
+     * @return array<string, mixed>
+     */
+    private function fetchCached(string $filename, string $url, ?int $maxAge = null): array
     {
-        // 0700: discovery/JWKS docs drive signature validation, so the cache must
-        // not be writable by other local users (key-substitution would bypass it).
-        if (!is_dir($this->cacheDir) && !mkdir($this->cacheDir, 0700, true) && !is_dir($this->cacheDir)) {
-            throw new SecurityException("Unable to create OIDC cache directory: {$this->cacheDir}");
-        }
+        $this->prepareCacheDir();
 
         $cachePath = rtrim($this->cacheDir, '/') . '/' . $filename;
+        $attemptPath = $cachePath . '.attempt';
+        $cached = $this->readCache($cachePath);
+        $age = PHP_INT_MAX;
 
-        if (file_exists($cachePath)) {
+        if ($cached !== null) {
             $mtime = filemtime($cachePath);
+            $age = $mtime !== false ? time() - $mtime : PHP_INT_MAX;
 
-            if ($mtime !== false && (time() - $mtime) < $this->cacheTtl) {
-                $contents = file_get_contents($cachePath);
+            if ($age < ($maxAge ?? $this->cacheTtl)) {
+                return $cached;
+            }
 
-                if ($contents !== false) {
-                    $decoded = json_decode($contents, true);
+            // A forced refresh is throttled by its last *attempt*, not by the
+            // cache file's age — otherwise a failing provider would be
+            // refetched on every request that asks for one.
+            if ($maxAge !== null) {
+                $attempted = @filemtime($attemptPath);
 
-                    if (is_array($decoded)) {
-                        return $decoded;
-                    }
+                if ($attempted !== false && (time() - $attempted) < $maxAge) {
+                    return $cached;
                 }
             }
         }
 
-        $decoded = OAuthClient::requestJson('GET', $url);
+        if ($maxAge !== null) {
+            @touch($attemptPath);
+        }
 
-        file_put_contents($cachePath, json_encode($decoded));
+        try {
+            $decoded = $this->fetchJson($url);
+        } catch (SecurityException $e) {
+            // The provider is unreachable or erroring. A stale document is
+            // far better than failing every request until it recovers, so
+            // serve the last good copy and retry after a short pause. Only an
+            // entry already past its TTL is re-dated; a failed forced refresh
+            // must not shorten the life of a fresh one.
+            if ($cached !== null) {
+                if ($age >= $this->cacheTtl) {
+                    @touch($cachePath, time() - $this->cacheTtl + self::STALE_RETRY_INTERVAL);
+                }
+
+                return $cached;
+            }
+
+            throw $e;
+        }
+
+        // Write-then-rename so a concurrent request never reads a half-written file.
+        $tmp = $cachePath . '.' . getmypid() . '.tmp';
+
+        if (@file_put_contents($tmp, json_encode($decoded), LOCK_EX) !== false) {
+            @chmod($tmp, 0600);
+
+            if (!@rename($tmp, $cachePath)) {
+                @unlink($tmp);
+            }
+        }
 
         return $decoded;
+    }
+
+    /**
+     * Network fetch, separated so tests can stub it.
+     *
+     * @return array<string, mixed>
+     */
+    protected function fetchJson(string $url): array
+    {
+        return OAuthClient::requestJson('GET', $url);
+    }
+
+    /** @return array<string, mixed>|null */
+    private function readCache(string $cachePath): ?array
+    {
+        if (!is_file($cachePath)) {
+            return null;
+        }
+
+        $contents = @file_get_contents($cachePath);
+        $decoded = $contents !== false ? json_decode($contents, true) : null;
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * 0700: discovery/JWKS documents drive signature validation, so the cache
+     * must not be writable by other local users (a planted key set would
+     * bypass it).
+     */
+    private function prepareCacheDir(): void
+    {
+        if ($this->cacheDirChecked) {
+            return;
+        }
+
+        if (!is_dir($this->cacheDir) && !mkdir($this->cacheDir, 0700, true) && !is_dir($this->cacheDir)) {
+            throw new SecurityException("Unable to create OIDC cache directory: {$this->cacheDir}");
+        }
+
+        // A directory that already existed may not be ours. The default
+        // location is under the shared system temp dir, where any local user
+        // can pre-create it — so there it must be owned by this process and
+        // closed to group/other. A directory the operator configured
+        // elsewhere is trusted as deployed.
+        $tempRoot = rtrim((string) realpath(sys_get_temp_dir()), '/');
+        $realDir = (string) realpath($this->cacheDir);
+
+        if ($tempRoot !== '' && str_starts_with($realDir . '/', $tempRoot . '/')) {
+            clearstatcache(true, $this->cacheDir);
+
+            if (function_exists('posix_geteuid') && fileowner($this->cacheDir) !== posix_geteuid()) {
+                throw new SecurityException(
+                    "OIDC cache directory {$this->cacheDir} is owned by another user. "
+                    . 'Set auth.oidcCacheDir to an application-owned directory.'
+                );
+            }
+
+            $perms = fileperms($this->cacheDir);
+
+            if ($perms !== false && ($perms & 0077) !== 0 && !@chmod($this->cacheDir, 0700)) {
+                throw new SecurityException("Unable to restrict OIDC cache directory permissions: {$this->cacheDir}");
+            }
+        }
+
+        $this->cacheDirChecked = true;
     }
 }

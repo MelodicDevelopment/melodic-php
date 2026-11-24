@@ -436,7 +436,7 @@ With a `DbContext`, both steps run in a single database transaction, which narro
 Things to know:
 
 - An uncaught `SecurityException` from `validateAndRotate()` becomes a `401` through the framework's exception handler, with the message masked as `Authentication failed.` outside debug mode.
-- Reuse detection survives the transaction. A reused token makes `validate()` revoke the family and throw `RefreshTokenReuseException` (a `SecurityException` carrying the `familyId`); the throw rolls the transaction back, so `validateAndRotate()` re-applies the family revocation outside the transaction before rethrowing.
+- Reuse detection survives the transaction. A reused token makes `validate()` revoke the family and throw `RefreshTokenReuseException` (a `SecurityException` carrying the `familyId`); the throw rolls the transaction back, so `validateAndRotate()` re-applies the family revocation outside the transaction before rethrowing. Do not call `validateAndRotate()` inside a transaction of your own: the rethrown exception rolls your transaction back too, and the revocation with it. If you must, catch `RefreshTokenReuseException` outside your transaction and call `revokeByFamily($e->familyId)` on your `RefreshTokenRepositoryInterface` there.
 - If you call `validate()` inside a transaction of your own, that rollback is yours to handle: catch `RefreshTokenReuseException` and call your repository's `revokeByFamily($e->familyId)` once the transaction has rolled back.
 - `RefreshTokenMiddleware` calls `validate()` on its own, outside any transaction. If you keep it on the route in front of `validateAndRotate()`, the token is validated twice; that is harmless.
 

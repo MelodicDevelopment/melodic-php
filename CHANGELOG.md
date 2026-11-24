@@ -15,7 +15,11 @@ fixes that change observable behavior.
 - **`ViewEngine`**: templates render in an isolated scope. A view variable
   named `path` previously replaced the template file being included (and could
   disclose an arbitrary local file if view data keys came from user input).
+- **Validation**: an attribute that names no class (a typo, or a missing
+  `use`) raises a `LogicException` naming the property, as it raised an error
+  in 4.0, instead of being skipped.
 - **Model binding**: nested `Model` properties hydrate from JSON objects; a
+  JSON list where an object is expected is a **400**; a
   wrong-shaped value for an `array`, nested-model, or union-typed property is
   a **400** instead of an uncaught `TypeError` (500); integer strings that
   overflow `PHP_INT_MAX` are rejected instead of silently clamped.
@@ -25,7 +29,13 @@ fixes that change observable behavior.
 - **`DbContext`** normalizes parameters: `false` binds as `0` (was `''`, which
   strict MySQL rejects), enums and dates bind as scalars.
 - **Routing**: captured route parameters are URL-decoded; a trailing slash
-  matches the same route (`/users/` ≡ `/users`).
+  matches the same route (`/users/` ≡ `/users`). The decoded value must
+  satisfy the parameter's constraint, so an encoded slash (`%2F`) cannot put
+  `../` into a one-segment `{name}`; `{path:.+}` opts in to slashes.
+  Constraints may use quantifier braces (`{year:\d{4}}`).
+- **Route attributes**: a route's list replaces its group's list instead of
+  being spliced into it by index (group `['admin', 'manager']` + route
+  `['editor']` gave `['editor', 'manager']`).
 - **`Request`**: a request target starting with `//` no longer loses its first
   path segment; `Bearer` scheme matching is case-insensitive.
 - **Unsupported HTTP methods** (`PROPFIND`, …) get a clean **501** instead of
@@ -66,13 +76,15 @@ fixes that change observable behavior.
   `X-CSRF-Token` header). `MvcController` passes `$csrfToken` / `$csrfField`
   to views. API paths and bearer-token requests are exempt.
 - **`RateLimitMiddleware`** (new): cache-backed fixed-window limiter with
-  `Retry-After` / `X-RateLimit-*` headers — e.g. throttle local login.
+  `Retry-After` / `X-RateLimit-*` headers — e.g. throttle local login. Each
+  instance keeps its own counter.
 - **`SecurityHeadersMiddleware`** (new): `nosniff`, frame options, referrer
   policy, optional HSTS / CSP / Permissions-Policy.
 - **Sessions** start with `session.use_strict_mode` and `use_only_cookies`
   enabled (attacker-supplied session ids are no longer adopted).
 - **Login page**: the error text is read from the session, never from the
   `?error=` URL parameter (prevented arbitrary text on the real login page).
+  A provider callback's `error_description` is never displayed either.
 - **Logout** also destroys the server-side session and clears the refresh
   cookie.
 - **OIDC cache**: an existing cache directory under the system temp dir must
@@ -96,13 +108,18 @@ fixes that change observable behavior.
 - **Database**: plain-SQL migrations (`Migrator`, `migrate`,
   `migrate:rollback`, `migrate:status`, `make:migration`), `Paginator` /
   `PaginatedResult`, and `DbContext::cursor()` for streaming large results.
-- **Configuration**: `${ENV_VAR}` / `${ENV_VAR:-default}` placeholders.
+  `migrate:rollback` refuses a migration whose `-- @down` section is missing
+  or empty.
+- **Configuration**: `${ENV_VAR}` / `${ENV_VAR:-default}` placeholders,
+  resolved from the process environment only — never from `$_SERVER`, and
+  never for `HTTP_*` names (request headers).
 - **`app.errorsAsExceptions`** (opt-in): convert PHP warnings/notices to
   exceptions.
 - **OIDC**: `claimMap` is applied to OIDC providers (e.g. Entra `roles` →
   entitlements); the key set is refetched when a token names an unknown key
-  id (key rotation); a stale discovery/JWKS document is served when the
-  provider is unreachable.
+  id (key rotation), at most once a minute whether or not the fetch
+  succeeds; a stale discovery/JWKS document is served when the provider is
+  unreachable.
 - **Logging**: `logging.maxFiles` retention; client errors (4xx) are logged
   as one line without a stack trace.
 - **Views**: `$this->partial()`; `MvcController::redirect()`.
@@ -125,6 +142,13 @@ fixes that change observable behavior.
 ### Behavior changes to be aware of
 
 - `apiResource()` registers a sixth route (`PATCH {path}/{id}` → `update`).
+  It is a fallback: an explicit `patch()` route that matches the same request
+  takes precedence wherever it is registered, so an app that already adds its
+  own PATCH route after the resource keeps its behavior.
+- A route's `entitlements` entries must be strings or backed enums; any other
+  type throws instead of being ignored.
+- A provider callback error shows a fixed message built from the standard
+  OAuth error code; `error_description` is no longer displayed.
 - Route parameters arrive URL-decoded (`John%20Doe` → `John Doe`).
 - `json_encode($model)` renders `DateTime` properties as ISO-8601 strings
   (`toArray()` still returns the objects).

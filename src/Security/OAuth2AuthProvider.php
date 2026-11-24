@@ -66,8 +66,10 @@ class OAuth2AuthProvider implements AuthProviderInterface
         $error = $request->query('error');
 
         if ($error !== null) {
-            $description = $request->query('error_description', $error);
-            throw new SecurityException('OAuth error: ' . $description);
+            // `error` and `error_description` arrive on the query string before
+            // any state check, so anyone can craft them. Only a recognised
+            // error code reaches the login page; the free text never does.
+            throw new SecurityException(OAuthClient::callbackErrorMessage(is_string($error) ? $error : ''));
         }
 
         if ($code === null || $state === null) {

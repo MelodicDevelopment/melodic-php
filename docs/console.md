@@ -267,7 +267,7 @@ $console->register(new MakeMigrationCommand(__DIR__ . '/../migrations'));
 |---|---|
 | `make:migration <name>` | Create `{YmdHis}_{name}.sql` in the migrations directory (default `./migrations` when no directory is passed to the constructor). The name must start with a letter and may contain letters, digits, dashes, and underscores. |
 | `migrate` | Apply every migration that has not run yet, oldest first. |
-| `migrate:rollback [--steps=N]` | Undo the most recently applied migration (or the last `N`). Fails if a migration has no `-- @down` section. |
+| `migrate:rollback [--steps=N]` | Undo the most recently applied migration (or the last `N`). Fails if a migration has no `-- @down` section or the section is empty (as `make:migration` leaves it). |
 | `migrate:status` | Table of all migrations and whether/when each was applied. |
 
 A migration file holds the forward SQL, optionally followed by a `-- @down` line and the SQL that undoes it. Statements are split on a `;` at the end of a line. `migrate` and `migrate:rollback` print the error and exit `1` if a statement fails; most databases auto-commit DDL, so a migration that fails part-way is not rolled back.

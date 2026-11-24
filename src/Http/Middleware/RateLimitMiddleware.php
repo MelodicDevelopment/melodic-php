@@ -52,7 +52,16 @@ class RateLimitMiddleware implements MiddlewareInterface
             return $handler->handle($request);
         }
 
-        $key = 'ratelimit:' . sha1(implode('|', $this->paths) . '|' . $client);
+        // Every setting is part of the key, so two limiters over the same
+        // paths (say a global one and a stricter POST-only one) keep
+        // separate counters and windows.
+        $key = 'ratelimit:' . sha1(implode('|', [
+            implode(',', $this->paths),
+            implode(',', array_map('strtoupper', $this->methods)),
+            $this->maxAttempts,
+            $this->windowSeconds,
+            $client,
+        ]));
         $now = time();
         $entry = $this->cache->get($key);
 

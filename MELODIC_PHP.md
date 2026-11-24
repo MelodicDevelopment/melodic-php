@@ -297,7 +297,8 @@ config/config.json  →  config/config.{APP_ENV}.json  →  config/config.dev.js
   The result is a string, with one exception: a value that is exactly one
   placeholder resolving to `true` / `false` becomes a real boolean
   (`"debug": "${APP_DEBUG:-false}"` works). Numbers stay strings — cast them
-  where you read them.
+  where you read them. Names starting with `HTTP_` never resolve (under a web
+  server those are request headers), so do not name a variable that way.
 - `config.dev.json` is loaded in **every** environment when the file exists.
   Keep it gitignored and out of deployment artifacts.
 - `vendor/bin/melodic make:config staging` creates `config/config.staging.json`.
@@ -462,19 +463,30 @@ registers six routes:
 | PATCH | `{path}/{id}` | `update` |
 | DELETE | `{path}/{id}` | `destroy` |
 
+The PATCH route is a fallback: your own `patch()` route that matches the same
+request takes precedence, whether it is registered before or after
+`apiResource()`.
+
 **`group($prefix, $callback, $middleware = [], $attributes = [])`** prefixes
 paths and prepends middleware; groups nest. Group attributes merge into route
-attributes (route wins).
+attributes and the route wins: maps merge key by key, while a list replaces
+the group's list as a whole (a route's `'entitlements' => ['editor']` replaces
+the group's `['admin', 'manager']`). An empty array or `null` never overrides
+an array, so `'entitlements' => []` cannot switch a group's requirement off.
 
 **Parameters**
 
 - `{name}` matches one path segment. `{name:regex}` constrains it
-  (`{id:\d+}`, `{slug:[a-z0-9-]+}`); the regex may not contain braces. A
+  (`{id:\d+}`, `{slug:[a-z0-9-]+}`, `{year:\d{4}}`). A
   value that fails the constraint does not match the route at all (404),
   whereas an unconstrained `{id}` bound to `int $id` answers 400.
 - Captured values are URL-decoded and bound to the action parameter **with the
   same name**, coerced to its declared type (`int`, `float`, `bool`, `string`,
-  backed enum). An uncoercible value is a 400, not a 500.
+  backed enum). An uncoercible value is a 400, not a 500. The decoded value
+  must satisfy the constraint as well, so an encoded slash (`%2F`) never
+  reaches a one-segment `{name}` — the route does not match. Use an explicit
+  `{path:.+}` to accept slashes, and still validate anything used as a file
+  path.
 - A trailing slash matches the same route (`/products/` ≡ `/products`).
 - Literal segments match literally (`/v1.0/` — the dot is not a wildcard).
 - Routes are tried in registration order; register specific paths
@@ -916,7 +928,9 @@ class UpdateProductCommand implements CommandInterface
 ```
 
 **Pagination** — `Melodic\Data\Paginator` inside a query. The SQL must have an
-`ORDER BY` and no `LIMIT`/`OFFSET`:
+`ORDER BY` and no `LIMIT`/`OFFSET`. Its column names must be unique (the count
+wraps it as a subquery, and MySQL rejects duplicate names there) — alias the
+columns of a join instead of selecting `a.*, b.*`:
 
 ```php
 public function execute(DbContextInterface $context): PaginatedResult
@@ -1153,7 +1167,7 @@ browser sessions.
 | `WebAuthenticationMiddleware` | Requires a valid auth cookie; otherwise remembers the URL and redirects to the login page. Sets `userContext` |
 | `OptionalWebAuthMiddleware` | Sets `userContext` from the cookie if valid, anonymous otherwise; never blocks |
 | `AuthCallbackMiddleware` | Serves `GET {loginPath}`, `GET {loginPath}/{provider}`, `GET|POST {callbackPath}/{provider}` and `POST /auth/logout` |
-| `AuthorizationMiddleware` | Requires an authenticated user (401) holding **any** of the route's `entitlements` (403) |
+| `AuthorizationMiddleware` | Requires an authenticated user (401) holding **any** of the route's `entitlements` (403). Entries are strings or backed enums; any other type throws |
 | `CsrfMiddleware` | CSRF check for non-API state-changing requests |
 | `RefreshTokenMiddleware` | Validates the refresh-token cookie on your refresh endpoint |
 
@@ -1315,6 +1329,9 @@ $app->addMiddleware(new RateLimitMiddleware(
 ));
 ```
 
+Each limiter counts on its own: two instances that differ in paths, methods,
+limit or window never share a counter, even on the same cache.
+
 ---
 
 ## 13. Errors, logging, cache, sessions, events
@@ -1473,8 +1490,9 @@ DROP TABLE products;
 ```
 
 Statements are split on a `;` at the end of a line. Most databases auto-commit
-DDL, so keep each migration small. A migration without a `-- @down` section
-cannot be rolled back. Never edit an applied migration — add a new one.
+DDL, so keep each migration small. A migration without a `-- @down` section,
+or with an empty one, cannot be rolled back (`migrate:rollback` fails rather
+than forget the migration). Never edit an applied migration — add a new one.
 
 **Your own command:**
 

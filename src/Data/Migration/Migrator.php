@@ -81,7 +81,10 @@ class Migrator
         foreach (array_slice($appliedNames, 0, max(0, $steps)) as $name) {
             $down = $this->sections($name)['down'];
 
-            if ($down === null) {
+            // An empty section (the make:migration stub, never filled in) is
+            // the same as none: "rolling back" would undo nothing and still
+            // forget that the migration ran.
+            if ($down === null || self::statements($down) === []) {
                 throw new RuntimeException("Migration '{$name}' has no \"-- @down\" section and cannot be rolled back.");
             }
 
@@ -165,20 +168,30 @@ class Migrator
         ];
     }
 
+    /**
+     * The executable statements in a section, comment-only chunks dropped.
+     *
+     * @return list<string>
+     */
+    private static function statements(string $sql): array
+    {
+        $statements = [];
+
+        foreach (preg_split('/;[ \t]*(?:\r?\n|$)/', $sql) ?: [] as $statement) {
+            // Drop comment-only chunks; a statement may still contain comments.
+            if (trim((string) preg_replace('/^\s*--.*$/m', '', $statement)) !== '') {
+                $statements[] = trim($statement);
+            }
+        }
+
+        return $statements;
+    }
+
     private function run(string $sql, string $name): void
     {
-        $statements = preg_split('/;[ \t]*(?:\r?\n|$)/', $sql) ?: [];
-
-        foreach ($statements as $statement) {
-            // Drop comment-only chunks; a statement may still contain comments.
-            $meaningful = trim((string) preg_replace('/^\s*--.*$/m', '', $statement));
-
-            if ($meaningful === '') {
-                continue;
-            }
-
+        foreach (self::statements($sql) as $statement) {
             try {
-                $this->context->command(trim($statement));
+                $this->context->command($statement);
             } catch (\Throwable $e) {
                 throw new RuntimeException("Migration '{$name}' failed: {$e->getMessage()}", 0, $e);
             }

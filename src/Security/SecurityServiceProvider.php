@@ -100,7 +100,11 @@ class SecurityServiceProvider extends ServiceProvider
                 $c->get(AuthProviderRegistry::class),
                 $c->get(SessionManager::class),
                 $c->get(AuthLoginRendererInterface::class),
-                $c->get(RefreshTokenConfig::class),
+                // Only when refresh tokens are in use — otherwise logout would
+                // expire a cookie the application never set.
+                $c->get(Configuration::class)->has('auth.refreshToken') || $c->isBound(RefreshTokenRepositoryInterface::class)
+                    ? $c->get(RefreshTokenConfig::class)
+                    : null,
             );
         });
 

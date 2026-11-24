@@ -420,6 +420,8 @@ This registers:
 | PATCH | `/users/{id}` | `update($id)` |
 | DELETE | `/users/{id}` | `destroy($id)` |
 
+The PATCH route is a fallback: an explicit `patch()` route that matches the same request takes precedence, whether it is registered before or after `apiResource()`.
+
 ### Route Groups, Middleware, and Attributes
 
 Group routes under a common prefix. Groups and individual routes accept `middleware` (class names or container ids, resolved from the container per request) and `attributes` (arbitrary metadata); nested groups accumulate both:
@@ -433,6 +435,8 @@ $router->group('/api', function (Router $router) {
 ```
 
 The matched `Route` is available as `$request->getAttribute('route')` and its attributes as `$request->getAttribute('route.attributes')`.
+
+Route attributes are merged over group attributes: maps merge key by key, and a list replaces the group's list as a whole (a route's `'entitlements' => ['editor']` replaces the group's `['admin', 'manager']`). An empty array never overrides a group value.
 
 ### Route Parameters
 
@@ -454,7 +458,7 @@ $router->get('/users/{id:\d+}', UserController::class, 'show');
 $router->get('/users/{slug}', UserController::class, 'showBySlug');
 ```
 
-Captured values are URL-decoded (`/files/a%20b.txt` → `"a b.txt"`) and are also set as request attributes (`$request->getAttribute('id')`). Literal segments match literally (`/v1.0/users` does not treat `.` as a wildcard), and a trailing slash is tolerated (`/users/` matches `/users`).
+Captured values are URL-decoded (`/files/a%20b.txt` → `"a b.txt"`); the decoded value must satisfy the parameter's constraint too, so an encoded slash (`%2F`) does not match a one-segment `{name}` (use `{path:.+}` to accept slashes). Constraints may use quantifier braces (`{year:\d{4}}`). Values are also set as request attributes (`$request->getAttribute('id')`). Literal segments match literally (`/v1.0/users` does not treat `.` as a wildcard), and a trailing slash is tolerated (`/users/` matches `/users`).
 
 ### Named Routes
 
@@ -823,7 +827,7 @@ The concrete `DbContext` class also has `cursor(string $class, string $sql, arra
 
 ### Pagination
 
-`Paginator::paginate()` runs a `COUNT(*)` over a plain SELECT plus the SELECT itself with `LIMIT`/`OFFSET`, and returns a `PaginatedResult`. The SQL must not already contain `LIMIT`/`OFFSET` and should have an `ORDER BY`:
+`Paginator::paginate()` runs a `COUNT(*)` over a plain SELECT plus the SELECT itself with `LIMIT`/`OFFSET`, and returns a `PaginatedResult`. The SQL must not already contain `LIMIT`/`OFFSET` and should have an `ORDER BY`. Its column names must be unique, because the count wraps it as a subquery (MySQL rejects `SELECT a.*, b.*` there when both tables share a column name) — alias the columns of a join:
 
 ```php
 use Melodic\Data\PaginatedResult;
@@ -944,7 +948,7 @@ $app->addMiddleware(new SecurityHeadersMiddleware([
 ]));
 ```
 
-**RateLimitMiddleware** (`Melodic\Http\Middleware`) — Fixed-window rate limiter backed by a `CacheInterface`. Over the limit it answers **429** with `Retry-After`; otherwise it adds `X-RateLimit-*` headers to the response. Clients are keyed by `Request::ip()` unless you pass a `keyResolver` (do so behind a reverse proxy). Counting is best-effort — suitable for abuse throttling, not exact quotas:
+**RateLimitMiddleware** (`Melodic\Http\Middleware`) — Fixed-window rate limiter backed by a `CacheInterface`. Over the limit it answers **429** with `Retry-After`; otherwise it adds `X-RateLimit-*` headers to the response. Clients are keyed by `Request::ip()` unless you pass a `keyResolver` (do so behind a reverse proxy). Counting is best-effort — suitable for abuse throttling, not exact quotas. Each instance keeps its own counter (the key covers its paths, methods, limit and window):
 
 ```php
 // 10 attempts per minute per client on the login callback
@@ -1164,7 +1168,7 @@ $app->addMiddleware(new AuthorizationMiddleware());
 $app->addMiddleware(new AuthorizationMiddleware(requiredEntitlements: ['admin', 'editor']));
 ```
 
-Route middleware is resolved from the container by class name and so cannot take constructor arguments. Declare per-route requirements with the `entitlements` route attribute instead (the user needs at least one of them):
+Route middleware is resolved from the container by class name and so cannot take constructor arguments. Declare per-route requirements with the `entitlements` route attribute instead (the user needs at least one of them; entries are strings or backed enums, and any other type throws rather than being ignored):
 
 ```php
 $router->get('/api/admin/stats', StatsController::class, 'index',

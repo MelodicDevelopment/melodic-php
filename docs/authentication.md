@@ -731,7 +731,7 @@ new AuthorizationMiddleware(array $requiredEntitlements = [], bool $requireAuthe
 
 Both responses are JSON, whatever kind of route they protect.
 
-Route middleware is resolved from the container by name, so `AuthorizationMiddleware::class` on a route always gets the default constructor arguments — on its own it requires authentication but no entitlements. Declare the required entitlements as a route (or group) attribute named `entitlements` (since 4.1); the user needs at least one of them:
+Route middleware is resolved from the container by name, so `AuthorizationMiddleware::class` on a route always gets the default constructor arguments — on its own it requires authentication but no entitlements. Declare the required entitlements as a route (or group) attribute named `entitlements` (since 4.1); the user needs at least one of them. Entries are strings or backed enums (the enum's value is compared); any other type throws instead of being skipped. A route's list replaces its group's list, and an empty list never removes a group's requirement:
 
 ```php
 $router->group('/api', function (Router $router) {
@@ -784,7 +784,7 @@ A `SecurityException` that reaches the framework's exception handler becomes a *
 
 Error responses produced by the exception handler still carry the headers of global `CorsMiddleware` and `SecurityHeadersMiddleware`, so a cross-origin API client can read the 401.
 
-The exception is the login flow itself: when a provider callback fails, the user is redirected to `{loginPath}?error=1` and the failure message is displayed on the login page. The message is kept in the session, never in the URL — the `error` query parameter is only a flag, and a link carrying its own `error` text shows a generic `Sign-in failed. Please try again.` (Before 4.1 the message itself travelled in the `error` parameter.) A custom login renderer still receives the message text.
+The exception is the login flow itself: when a provider callback fails, the user is redirected to `{loginPath}?error=1` and the failure message is displayed on the login page. The message is kept in the session, never in the URL — the `error` query parameter is only a flag, and a link carrying its own `error` text shows a generic `Sign-in failed. Please try again.` (Before 4.1 the message itself travelled in the `error` parameter.) The same holds for an identity provider's callback: of `?error=…&error_description=…` only a standard OAuth error code is shown (`Sign-in failed (access_denied). Please try again.`); the description is never displayed. A custom login renderer still receives the message text.
 
 ---
 

@@ -170,4 +170,23 @@ class OAuthClient
 
         return $status;
     }
+
+    /**
+     * The message shown on the login page when a provider redirects back with
+     * `?error=`. That parameter is attacker-controllable (a crafted callback
+     * link needs no valid state), so only the standard OAuth 2.0 / OIDC error
+     * codes are echoed and `error_description` is never used.
+     */
+    public static function callbackErrorMessage(string $error): string
+    {
+        $known = [
+            'access_denied', 'invalid_request', 'unauthorized_client', 'unsupported_response_type',
+            'invalid_scope', 'server_error', 'temporarily_unavailable', 'login_required',
+            'consent_required', 'interaction_required', 'account_selection_required',
+        ];
+
+        return in_array($error, $known, true)
+            ? "Sign-in failed ({$error}). Please try again."
+            : 'Sign-in failed. Please try again.';
+    }
 }

@@ -60,7 +60,9 @@ class Configuration
      *
      * A placeholder whose variable is unset and has no default is left
      * untouched (so a literal "${...}" in existing config keeps its value).
-     * The default also applies when the variable is set but empty. Values are
+     * The default also applies when the variable is set but empty. Names
+     * starting with HTTP_ are never resolved (they are request headers under a
+     * web server) and behave as unset. Values are
      * strings, except that a value consisting of a single placeholder that
      * resolves to "true" or "false" becomes a boolean.
      *
@@ -82,10 +84,14 @@ class Configuration
                 $data[$key] = preg_replace_callback(
                     '/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/',
                     static function (array $m): string {
-                        $env = getenv($m[1]);
+                        // Under a web SAPI, HTTP_* names are request headers
+                        // (getenv() returns them too), so a client could set
+                        // the value. They never resolve; $_SERVER is not
+                        // consulted for the same reason.
+                        $env = stripos($m[1], 'HTTP_') === 0 ? null : getenv($m[1]);
 
                         if ($env === false) {
-                            $env = $_ENV[$m[1]] ?? $_SERVER[$m[1]] ?? null;
+                            $env = $_ENV[$m[1]] ?? null;
                         }
 
                         // ":-" follows shell semantics: the default applies

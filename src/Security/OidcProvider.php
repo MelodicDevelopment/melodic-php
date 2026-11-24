@@ -28,7 +28,6 @@ class OidcProvider
     }
 
     /** @return array<string, mixed> */
-    /** @return array<string, mixed> */
     public function getJwks(): array
     {
         return $this->fetchCached('oidc_jwks.json', $this->jwksUri());
@@ -104,14 +103,32 @@ class OidcProvider
         $this->prepareCacheDir();
 
         $cachePath = rtrim($this->cacheDir, '/') . '/' . $filename;
+        $attemptPath = $cachePath . '.attempt';
         $cached = $this->readCache($cachePath);
+        $age = PHP_INT_MAX;
 
         if ($cached !== null) {
             $mtime = filemtime($cachePath);
+            $age = $mtime !== false ? time() - $mtime : PHP_INT_MAX;
 
-            if ($mtime !== false && (time() - $mtime) < ($maxAge ?? $this->cacheTtl)) {
+            if ($age < ($maxAge ?? $this->cacheTtl)) {
                 return $cached;
             }
+
+            // A forced refresh is throttled by its last *attempt*, not by the
+            // cache file's age — otherwise a failing provider would be
+            // refetched on every request that asks for one.
+            if ($maxAge !== null) {
+                $attempted = @filemtime($attemptPath);
+
+                if ($attempted !== false && (time() - $attempted) < $maxAge) {
+                    return $cached;
+                }
+            }
+        }
+
+        if ($maxAge !== null) {
+            @touch($attemptPath);
         }
 
         try {
@@ -119,9 +136,13 @@ class OidcProvider
         } catch (SecurityException $e) {
             // The provider is unreachable or erroring. A stale document is
             // far better than failing every request until it recovers, so
-            // serve the last good copy and retry after a short pause.
+            // serve the last good copy and retry after a short pause. Only an
+            // entry already past its TTL is re-dated; a failed forced refresh
+            // must not shorten the life of a fresh one.
             if ($cached !== null) {
-                @touch($cachePath, time() - $this->cacheTtl + self::STALE_RETRY_INTERVAL);
+                if ($age >= $this->cacheTtl) {
+                    @touch($cachePath, time() - $this->cacheTtl + self::STALE_RETRY_INTERVAL);
+                }
 
                 return $cached;
             }

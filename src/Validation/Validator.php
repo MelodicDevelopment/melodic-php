@@ -106,7 +106,18 @@ class Validator
                     // compatibility) any attribute class with a validate() method.
                     $name = $attribute->getName();
 
-                    if (class_exists($name) && (is_a($name, RuleInterface::class, true) || method_exists($name, 'validate'))) {
+                    // An attribute that names no class is a typo or a missing
+                    // `use` — the rule would otherwise silently not apply.
+                    if (!class_exists($name)) {
+                        throw new \LogicException(sprintf(
+                            'Attribute #[%s] on %s::$%s does not exist. Is a "use" statement missing?',
+                            $name,
+                            $class,
+                            $property->getName(),
+                        ));
+                    }
+
+                    if (is_a($name, RuleInterface::class, true) || method_exists($name, 'validate')) {
                         $rules[] = $attribute->newInstance();
                     }
                 }

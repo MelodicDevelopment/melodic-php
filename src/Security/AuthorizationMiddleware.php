@@ -56,7 +56,9 @@ class AuthorizationMiddleware implements MiddlewareInterface
      *         middleware: [AuthorizationMiddleware::class],
      *         attributes: ['entitlements' => ['admin']]);
      *
-     * The user needs at least one of the listed entitlements.
+     * The user needs at least one of the listed entitlements. Entries are
+     * strings or backed enums (their value is used); anything else throws,
+     * because silently dropping an entry would leave the route unprotected.
      *
      * @return string[]
      */
@@ -65,8 +67,26 @@ class AuthorizationMiddleware implements MiddlewareInterface
         $attributes = $request->getAttribute('route.attributes');
         $routeEntitlements = is_array($attributes) ? ($attributes['entitlements'] ?? []) : [];
 
-        $all = array_merge($this->requiredEntitlements, (array) $routeEntitlements);
+        if (!is_array($routeEntitlements)) {
+            $routeEntitlements = [$routeEntitlements];
+        }
 
-        return array_values(array_unique(array_filter($all, 'is_string')));
+        $required = [];
+
+        foreach ([...$this->requiredEntitlements, ...array_values($routeEntitlements)] as $entitlement) {
+            if ($entitlement instanceof \BackedEnum) {
+                $entitlement = (string) $entitlement->value;
+            }
+
+            if (!is_string($entitlement) || $entitlement === '') {
+                throw new \InvalidArgumentException(
+                    'Route entitlements must be non-empty strings or backed enums, got ' . get_debug_type($entitlement) . '.'
+                );
+            }
+
+            $required[] = $entitlement;
+        }
+
+        return array_values(array_unique($required));
     }
 }

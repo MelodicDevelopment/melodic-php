@@ -134,7 +134,7 @@ String values in a config file may reference environment variables (since 4.1), 
 }
 ```
 
-- `${VAR}` is replaced with the value of the environment variable `VAR` (looked up with `getenv()`, then `$_ENV`, then `$_SERVER`).
+- `${VAR}` is replaced with the value of the environment variable `VAR` (looked up with `getenv()`, then `$_ENV`). `$_SERVER` is not consulted, and a name starting with `HTTP_` never resolves and is treated as unset — under a web server those are request headers, which a client controls.
 - `${VAR:-default}` uses `default` when the variable is not set **or is empty** (shell semantics). `${VAR}` with no default keeps an empty value as an empty string.
 - A placeholder whose variable is not set and has no default is left in the value untouched (`"${DB_PASSWORD}"` stays literally that).
 - Placeholders are resolved when a file is loaded (`loadEnvironmentConfig()` / `loadConfig()` / `Configuration::loadFile()`), in string values at any depth. Values added with `set()` or `merge()` are not processed.

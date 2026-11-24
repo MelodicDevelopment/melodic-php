@@ -33,6 +33,12 @@ class Model implements \JsonSerializable
         $instance = $reflector->newInstanceWithoutConstructor();
 
         foreach ($data as $key => $value) {
+            // A JSON list (["a", "b"]) has integer keys and names no property.
+            // @phpstan-ignore function.alreadyNarrowedType (wire input is not bound by the PHPDoc)
+            if (!is_string($key)) {
+                continue;
+            }
+
             // Try the key as-is (PascalCase from DB), then ucfirst (camelCase from frontend),
             // then strtoupper for acronym properties like $EIN/$URL/$SSN sent as lowercase JSON.
             $propertyName = match (true) {
@@ -155,7 +161,7 @@ class Model implements \JsonSerializable
         // Nested model: hydrate from a JSON object. Binding errors are
         // reported with a dotted path (e.g. "address.city").
         if (is_a($class, self::class, true)) {
-            if (!is_array($value)) {
+            if (!is_array($value) || ($value !== [] && array_is_list($value))) {
                 throw new ModelBindingException($field, "Field '{$field}' must be an object.");
             }
 

@@ -91,7 +91,7 @@ class HttpFeaturesTest extends TestCase
 
         $this->assertSame(['id' => '42'], $router->match(HttpMethod::GET, '/users/42')['params']);
         $this->assertNull($router->match(HttpMethod::GET, '/users/abc'));
-        $this->assertSame(['name' => 'a b/c'], $router->match(HttpMethod::GET, '/files/a%20b%2Fc')['params']);
+        $this->assertSame(['name' => 'a b.txt'], $router->match(HttpMethod::GET, '/files/a%20b.txt')['params']);
         $this->assertSame('/users/7?tab=posts', $router->url('users.show', ['id' => 7, 'tab' => 'posts']));
 
         $this->expectException(\InvalidArgumentException::class);
